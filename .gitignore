@@ -1,0 +1,4 @@
+scenery-manager/
+scenery-manager-patch/
+dist/openrct2-scenery-manager-*
+tests/build/
