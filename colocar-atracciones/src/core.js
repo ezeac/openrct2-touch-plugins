@@ -172,7 +172,7 @@ function copyColours(rideId, template) {
         changes.push([0, template.track.main], [1, template.track.additional], [2, template.track.supports]);
     }
     if (template.vehicle) {
-        changes.push([4, template.vehicle.body], [5, template.vehicle.trim], [6, template.vehicle.tertiary]);
+        changes.push([3, template.vehicle.body], [4, template.vehicle.trim], [5, template.vehicle.tertiary]);
     }
     changes.forEach(function (c) {
         context.executeAction("ridesetappearance", { ride: rideId, type: c[0], value: c[1], index: 0 });

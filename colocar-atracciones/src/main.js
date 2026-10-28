@@ -1,6 +1,6 @@
 registerPlugin({
     name: "Colocar atracciones",
-    version: "1.0.0",
+    version: "1.0.1",
     authors: ["Ezequiel"],
     type: "local",
     licence: "MIT",
