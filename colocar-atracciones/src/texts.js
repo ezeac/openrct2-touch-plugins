@@ -3,7 +3,7 @@ var TEXTS = {
         title: "Place rides",
         internalError: "Place rides: internal error",
         cantBuild: "Cannot build here",
-        idle: "Choose a ride in the game's menu.",
+        idle: "Choose a ride or scenery in the game's menu.",
         pick: "Tap where the ride goes.",
         marked: "Tap elsewhere to move it, or Place.",
         entranceMarked: "Entrance marked: tap elsewhere or Place.",
@@ -24,13 +24,18 @@ var TEXTS = {
         height: "Height",
         rotate: "Rotate",
         place: "Place",
-        confirm: "Ask for confirmation when placing"
+        confirm: "Ask for confirmation when placing",
+        confirmScenery: "Also for scenery (not walls)",
+        sceneryPick: "Tap where the scenery goes.",
+        sceneryMarked: "Tap elsewhere to move it, or Place.",
+        sceneryPlaced: "Placed for {0}. Tap for another one.",
+        sceneryFailed: "The scenery could not be placed"
     },
     es: {
         title: "Colocar atracciones",
         internalError: "Colocar atracciones: error interno",
         cantBuild: "No se puede construir acá",
-        idle: "Elegí una atracción en el menú del juego.",
+        idle: "Elegí una atracción o un decorado en el menú.",
         pick: "Tocá dónde va la atracción.",
         marked: "Tocá otro lugar para moverla o Colocar.",
         entranceMarked: "Entrada marcada: otro lugar o Colocar.",
@@ -51,6 +56,11 @@ var TEXTS = {
         height: "Altura",
         rotate: "Rotar",
         place: "Colocar",
-        confirm: "Pedir confirmación al colocar"
+        confirm: "Pedir confirmación al colocar",
+        confirmScenery: "También en decorados (no muros)",
+        sceneryPick: "Tocá dónde va el decorado.",
+        sceneryMarked: "Tocá otro lugar para moverlo o Colocar.",
+        sceneryPlaced: "Colocado por {0}. Tocá para otro.",
+        sceneryFailed: "No se pudo colocar el decorado"
     }
 };

@@ -20,7 +20,9 @@ On a touch screen the game places a flat ride or stall on the first tap. With th
 - **Every tap moves the ride**, so you can pan the camera freely. Nothing is built until you tap "Place".
 - **Height:** "+" and "−" place the ride above the ground, with supports, which the game only allows with the Shift key on a computer.
 - **Entrance and exit** are marked the same way and placed at the ride's height.
-- Untick "Ask for confirmation when placing" to go back to the game's normal behaviour.
+- **Scenery works the same way:** choose a tree, a statue or any other small or large scenery item in the game's menu and tap the map. Each tap moves it, "+" and "−" raise or lower it by half a step, "Rotate" turns it, and on items that take a quarter of a tile the tap also picks the corner. After "Place", the same item stays chosen at the same height for the next one.
+- **Walls are left alone** (fences, hedges), so dragging along a path still places a whole row at once.
+- Untick "Ask for confirmation when placing" to go back to the game's normal behaviour for rides, and "Also for scenery" for scenery.
 
 ## Install
 
@@ -42,6 +44,7 @@ Dos plugins para construir más cómodo en OpenRCT2 desde el celular o la tablet
 
 - **Conectar caminos:** tocás dos caminos y arma el trazado más corto, con vista previa, "+" y "−" para alargarlo en zigzag, "Construir" y "Deshacer".
 - **Colocar atracciones:** al elegir una atracción fija o un puesto, cada toque la mueve y recién se construye con "Colocar". Permite subirla del suelo y marcar la entrada y la salida igual.
+- **Decorados:** con los decorados simples y grandes pasa lo mismo, con "+" y "−" de a medio escalón y "Rotar". En los de cuarto de casilla, el toque elige la esquina. Los muros (vallas, setos) no se tocan, así que se siguen colocando de a varios arrastrando.
 
 Para instalarlos, copiá los `.js` de `dist/` a la carpeta `openrct2-user/plugin` del celular.
 

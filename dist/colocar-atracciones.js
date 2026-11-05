@@ -5,7 +5,7 @@ var TEXTS = {
         title: "Place rides",
         internalError: "Place rides: internal error",
         cantBuild: "Cannot build here",
-        idle: "Choose a ride in the game's menu.",
+        idle: "Choose a ride or scenery in the game's menu.",
         pick: "Tap where the ride goes.",
         marked: "Tap elsewhere to move it, or Place.",
         entranceMarked: "Entrance marked: tap elsewhere or Place.",
@@ -26,13 +26,18 @@ var TEXTS = {
         height: "Height",
         rotate: "Rotate",
         place: "Place",
-        confirm: "Ask for confirmation when placing"
+        confirm: "Ask for confirmation when placing",
+        confirmScenery: "Also for scenery (not walls)",
+        sceneryPick: "Tap where the scenery goes.",
+        sceneryMarked: "Tap elsewhere to move it, or Place.",
+        sceneryPlaced: "Placed for {0}. Tap for another one.",
+        sceneryFailed: "The scenery could not be placed"
     },
     es: {
         title: "Colocar atracciones",
         internalError: "Colocar atracciones: error interno",
         cantBuild: "No se puede construir acá",
-        idle: "Elegí una atracción en el menú del juego.",
+        idle: "Elegí una atracción o un decorado en el menú.",
         pick: "Tocá dónde va la atracción.",
         marked: "Tocá otro lugar para moverla o Colocar.",
         entranceMarked: "Entrada marcada: otro lugar o Colocar.",
@@ -53,7 +58,12 @@ var TEXTS = {
         height: "Altura",
         rotate: "Rotar",
         place: "Colocar",
-        confirm: "Pedir confirmación al colocar"
+        confirm: "Pedir confirmación al colocar",
+        confirmScenery: "También en decorados (no muros)",
+        sceneryPick: "Tocá dónde va el decorado.",
+        sceneryMarked: "Tocá otro lugar para moverlo o Colocar.",
+        sceneryPlaced: "Colocado por {0}. Tocá para otro.",
+        sceneryFailed: "No se pudo colocar el decorado"
     }
 };
 var translations = null;
@@ -298,9 +308,159 @@ function placedTrackOf(rideId) {
     }
     return null;
 }
+var SCENERY_STEP = 8;
+var FULL_TILE_FLAG = 1;
+var SCENERY_WINDOW_CLASS = 18;
+var REFUND_ACTION = "colocaratracciones_refund";
+var SCENERY_ACTIONS = { smallsceneryplace: "small", largesceneryplace: "large" };
+var ELEMENT_TYPES = { small: "small_scenery", large: "large_scenery" };
+
+// The game charges a removal price, so this gives back the difference to undo a placement for free.
+function registerRefundAction() {
+    context.registerAction(REFUND_ACTION, function () {
+        return {};
+    }, function (e) {
+        park.cash += e.args.amount;
+        return {};
+    });
+}
+
+function refund(amount, done) {
+    if (amount <= 0) {
+        if (done) done();
+        return;
+    }
+    context.executeAction(REFUND_ACTION, { amount: amount }, function () {
+        if (done) done();
+    });
+}
+
+function isFullTile(item) {
+    if (item.kind !== "small") return true;
+    var object = objectManager.getObject("small_scenery", item.object);
+    return !object || (object.flags & FULL_TILE_FLAG) !== 0;
+}
+
+// The tool reports the tile corner, so the exact spot is worked out from the screen, at the tile's ground height.
+function exactMapCoords(e) {
+    var v = ui.mainViewport, tile = { x: Math.floor(e.mapCoords.x / 32) * 32, y: Math.floor(e.mapCoords.y / 32) * 32 };
+    if (!e.screenCoords || !v || v.left === undefined) return e.mapCoords;
+    var surface = surfaceOf(tile.x / 32, tile.y / 32), z = surface ? surface.baseZ : 0, f = Math.pow(2, v.zoom);
+    var a = v.left + e.screenCoords.x * f, b = 2 * (v.top + e.screenCoords.y * f + z);
+    var inverse = [[(b - a) / 2, (b + a) / 2], [(-a - b) / 2, (b - a) / 2], [(a - b) / 2, (-a - b) / 2], [(a + b) / 2, (a - b) / 2]];
+    var p = inverse[v.rotation & 3];
+    return {
+        x: Math.min(tile.x + 31, Math.max(tile.x, Math.floor(p[0]))),
+        y: Math.min(tile.y + 31, Math.max(tile.y, Math.floor(p[1])))
+    };
+}
+
+// Quarter of the tile under the tap, numbered as the game numbers small scenery quadrants.
+function quadrantAt(mapCoords) {
+    var right = mapCoords.x % 32 >= 16, down = mapCoords.y % 32 >= 16;
+    if (!right) return down ? 1 : 0;
+    return down ? 2 : 3;
+}
+
+function sceneryArgs(item, z, flags) {
+    var args = {
+        x: item.x * 32, y: item.y * 32, z: z, direction: item.direction, object: item.object,
+        primaryColour: item.colours[0], secondaryColour: item.colours[1], tertiaryColour: item.colours[2], flags: flags
+    };
+    if (item.kind === "small") args.quadrant = item.quadrant;
+    return args;
+}
+
+function placeAction(item) {
+    return item.kind === "small" ? "smallsceneryplace" : "largesceneryplace";
+}
+
+// Height zero lets the game put the item on the ground, like its own tool does.
+function sceneryZ(item, offset, ground) {
+    return offset === 0 ? 0 : ground + offset * SCENERY_STEP;
+}
+
+function querySceneryPlace(item, z) {
+    var result = null;
+    ownQuery = true;
+    try {
+        context.queryAction(placeAction(item), sceneryArgs(item, z, 0), function (r) {
+            result = r;
+        });
+    } finally {
+        ownQuery = false;
+    }
+    return result;
+}
+
+function groundHeight(item) {
+    var result = querySceneryPlace(item, 0);
+    if (result && result.position) return result.position.z;
+    var surface = surfaceOf(item.x, item.y);
+    return surface ? surface.baseZ : 0;
+}
+
+// Our own placements reach the hooks a tick later, so they are recognised by their arguments.
+var ownPlacements = {};
+
+function placementKey(action, args) {
+    return [action, args.x, args.y, args.object, args.quadrant || 0, args.flags & GHOST_FLAG].join(",");
+}
+
+function isOwnPlacement(action, args) {
+    return !!ownPlacements[placementKey(action, args)];
+}
+
+function placeScenery(item, z, flags, done) {
+    var action = placeAction(item), args = sceneryArgs(item, z, flags), key = placementKey(action, args);
+    ownPlacements[key] = (ownPlacements[key] || 0) + 1;
+    context.executeAction(action, args, function (r) {
+        if (--ownPlacements[key] === 0) delete ownPlacements[key];
+        if (done) done(r);
+    });
+}
+
+// The element the game created for the item, found again because handles go stale after any action.
+function findSceneryElement(item, ghost) {
+    var elements = map.getTile(item.x, item.y).elements, best = null;
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        if (e.type !== ELEMENT_TYPES[item.kind] || e.object !== item.object || e.isGhost !== ghost) continue;
+        if (item.kind === "large" && e.sequence !== 0) continue;
+        if (item.kind === "small" && !isFullTile(item) && e.quadrant !== item.quadrant) continue;
+        if (item.z === undefined || Math.abs(e.baseZ - item.z) < (best ? Math.abs(best.baseZ - item.z) : Infinity)) best = e;
+    }
+    return best ? { z: best.baseZ, quadrant: item.kind === "small" ? best.quadrant : 0, direction: best.direction } : null;
+}
+
+function removeScenery(item, z, flags, done) {
+    var finish = function (r) {
+        if (done) done(r);
+    };
+    if (item.kind === "small") {
+        context.executeAction("smallsceneryremove", {
+            x: item.x * 32, y: item.y * 32, z: z, object: item.object, quadrant: item.quadrant, flags: flags
+        }, finish);
+    } else {
+        context.executeAction("largesceneryremove", {
+            x: item.x * 32, y: item.y * 32, z: z, direction: item.direction, tileIndex: 0, flags: flags
+        }, finish);
+    }
+}
+
+function removeSceneryGhost(ghost, done) {
+    if (!ghost) {
+        if (done) done();
+        return;
+    }
+    removeScenery(ghost, ghost.z, GHOST_FLAG, function () {
+        if (done) done();
+    });
+}
 var WINDOW_CLASS = "colocar-atracciones";
 var TOOL_ID = "colocar-atracciones-lugar";
 var ENABLED_KEY = "colocar-atracciones.confirmar";
+var SCENERY_ENABLED_KEY = "colocar-atracciones.decorados";
 var RIDE_CONSTRUCTION_CLASS = 13;
 var WIDTH = 220;
 
@@ -315,6 +475,10 @@ var state = {
     error: null,
     entrance: null,
     entranceGhost: null,
+    kind: "ride",
+    item: null,
+    ground: 0,
+    sceneryGhost: null,
     message: ""
 };
 
@@ -323,9 +487,18 @@ var handledRides = {};
 var ownRides = {};
 var expectedPlace = null;
 var pendingCapture = null;
+var pendingScenery = null;
 
 function enabled() {
     return context.sharedStorage.get(ENABLED_KEY, true);
+}
+
+function sceneryEnabled() {
+    return context.sharedStorage.get(SCENERY_ENABLED_KEY, true);
+}
+
+function isScenery() {
+    return state.kind === "scenery";
 }
 
 // Plugin errors only reach the console, which is not visible on a phone.
@@ -357,6 +530,7 @@ function setWidget(name, props) {
 }
 
 function currentZ() {
+    if (isScenery()) return sceneryZ(state.item, state.offset, state.ground);
     return state.base + state.offset * HEIGHT_STEP;
 }
 
@@ -366,8 +540,8 @@ function refresh() {
     var placingEntrance = state.phase === "entrance" || state.phase === "exit";
     var texts = {
         idle: t("idle"),
-        pick: t("pick"),
-        marked: state.error || t("marked"),
+        pick: isScenery() ? t("sceneryPick") : t("pick"),
+        marked: state.error || (isScenery() ? t("sceneryMarked") : t("marked")),
         entrance: state.entrance ? t("entranceMarked") : t("entrancePick"),
         exit: state.entrance ? t("exitMarked") : t("exitPick")
     };
@@ -377,10 +551,12 @@ function refresh() {
     setWidget("lower", { isDisabled: !marked || state.busy });
     setWidget("raise", { isDisabled: !marked || state.busy });
     setWidget("rotate", { isDisabled: !marked || state.busy });
-    var canPlace = (marked && !state.error && state.ghost !== null) || (placingEntrance && state.entrance !== null);
+    var ghost = isScenery() ? state.sceneryGhost : state.ghost;
+    var canPlace = (marked && !state.error && ghost !== null) || (placingEntrance && state.entrance !== null);
     setWidget("place", { isDisabled: !canPlace || state.busy });
     setWidget("cancel", { isDisabled: state.phase === "idle" || state.busy, text: placingEntrance ? t("skip") : t("cancel") });
     setWidget("enabled", { isChecked: enabled() });
+    setWidget("sceneryEnabled", { isChecked: sceneryEnabled() });
 }
 
 function cancelOwnTool() {
@@ -395,19 +571,24 @@ function closeRideConstruction() {
 }
 
 function clearGhosts(done) {
-    var trackGhost = state.ghost, entranceGhost = state.entranceGhost;
+    var trackGhost = state.ghost, entranceGhost = state.entranceGhost, sceneryGhost = state.sceneryGhost;
     state.ghost = null;
     state.entranceGhost = null;
+    state.sceneryGhost = null;
     removeTrackGhost(trackGhost, function () {
-        removeEntranceGhost(entranceGhost, done);
+        removeEntranceGhost(entranceGhost, function () {
+            removeSceneryGhost(sceneryGhost, done);
+        });
     });
 }
 
 function reset(message) {
     cancelOwnTool();
     clearGhosts();
-    if (state.mark && (state.phase === "pick" || state.phase === "marked")) demolishRide(state.mark.ride);
+    if (!isScenery() && state.mark && (state.phase === "pick" || state.phase === "marked")) demolishRide(state.mark.ride);
     state.phase = "idle";
+    state.kind = "ride";
+    state.item = null;
     state.mark = null;
     state.entrance = null;
     state.busy = false;
@@ -416,6 +597,7 @@ function reset(message) {
 }
 
 function updateGhost() {
+    if (isScenery()) return updateSceneryGhost();
     state.busy = true;
     refresh();
     clearGhosts(safely(function () {
@@ -457,6 +639,138 @@ function isRideConstructionOpen() {
     return false;
 }
 
+function updateSceneryGhost() {
+    state.busy = true;
+    refresh();
+    clearGhosts(safely(function () {
+        var item = state.item, z = currentZ();
+        var result = querySceneryPlace(item, z);
+        state.error = result && result.error ? errorText(result) : null;
+        state.cost = result && !result.error ? result.cost : null;
+        if (state.error) {
+            state.busy = false;
+            refresh();
+            return;
+        }
+        placeScenery(item, z, GHOST_FLAG, safely(function (r) {
+            var found = !r.error && findSceneryElement(sceneryAt(item, r, z), true);
+            var ghost = found ? copyItem(item, { z: found.z, quadrant: found.quadrant }) : null;
+            if (ghost && state.item === item && state.phase === "marked") {
+                state.sceneryGhost = ghost;
+            } else if (ghost) {
+                removeSceneryGhost(ghost);
+            }
+            state.busy = false;
+            refresh();
+        }));
+    }));
+}
+
+function copyItem(item, changes) {
+    var copy = {};
+    for (var key in item) copy[key] = item[key];
+    for (var change in changes) copy[change] = changes[change];
+    return copy;
+}
+
+// The height the game used: the one asked for, or the ground it chose when asked for zero.
+function sceneryAt(item, result, z) {
+    return copyItem(item, { z: z !== 0 ? z : result.position ? result.position.z : undefined });
+}
+
+function markScenery(mapCoords) {
+    var item = state.item;
+    markSceneryAt(Math.floor(mapCoords.x / 32), Math.floor(mapCoords.y / 32), isFullTile(item) ? item.quadrant : quadrantAt(mapCoords));
+}
+
+function markSceneryAt(x, y, quadrant) {
+    var item = state.item;
+    item.x = x;
+    item.y = y;
+    item.quadrant = quadrant;
+    state.ground = groundHeight(item);
+    state.phase = "marked";
+    state.message = "";
+    updateGhost();
+}
+
+function isSceneryWindowOpen() {
+    for (var i = 0; i < ui.windows; i++) {
+        var w = ui.getWindow(i);
+        if (w && w.classification === SCENERY_WINDOW_CLASS) return true;
+    }
+    return false;
+}
+
+// Small and large scenery chosen in the game's menu. Walls are left alone, so dragging a fence still works.
+function isNativeScenery(e) {
+    return SCENERY_ACTIONS[e.action] && sceneryEnabled() && !ownQuery && !isOwnPlacement(e.action, e.args) && isSceneryWindowOpen();
+}
+
+// The game only reports placements that succeed, so a refused tap never reaches the plugin.
+function captureScenery(e, placed) {
+    if (pendingScenery) {
+        if (placed && !pendingScenery.placed) pendingScenery.placed = { args: e.args, result: e.result };
+        return;
+    }
+    pendingScenery = {
+        item: {
+            kind: SCENERY_ACTIONS[e.action], x: e.args.x / 32, y: e.args.y / 32, direction: e.args.direction || 0,
+            object: e.args.object, quadrant: e.args.quadrant || 0,
+            colours: [e.args.primaryColour, e.args.secondaryColour, e.args.tertiaryColour]
+        },
+        placed: placed ? { args: e.args, result: e.result } : null
+    };
+    context.setTimeout(safely(takeOverScenery), 0);
+}
+
+// A tap that got through is undone at no cost, so the player can still adjust the item before it counts.
+function undoNativeScenery(item, placed, done) {
+    var at = copyItem(item, { x: placed.args.x / 32, y: placed.args.y / 32, quadrant: placed.args.quadrant || 0 });
+    var found = findSceneryElement(sceneryAt(at, placed.result, placed.args.z), false);
+    if (!found) return done();
+    removeScenery(copyItem(at, { quadrant: found.quadrant }), found.z, 0, function (r) {
+        refund((placed.result.cost || 0) + (r.error ? 0 : r.cost || 0), done);
+    });
+}
+
+function takeOverScenery() {
+    var captured = pendingScenery;
+    pendingScenery = null;
+    var previousRide = !isScenery() && state.mark && (state.phase === "pick" || state.phase === "marked") ? state.mark.ride : -1;
+    cancelOwnTool();
+    clearGhosts();
+    state.busy = true;
+    var start = safely(function () {
+        if (previousRide >= 0) demolishRide(previousRide);
+        cancelNativeTool();
+        state.busy = false;
+        state.kind = "scenery";
+        state.item = captured.item;
+        state.mark = null;
+        state.offset = 0;
+        state.error = null;
+        openWindow();
+        if (captured.placed) {
+            markSceneryAt(captured.placed.args.x / 32, captured.placed.args.y / 32, captured.item.quadrant);
+        } else {
+            state.phase = "pick";
+            state.message = "";
+            refresh();
+        }
+        pickLocation();
+    });
+    if (captured.placed) {
+        undoNativeScenery(captured.item, captured.placed, start);
+    } else {
+        start();
+    }
+}
+
+function cancelNativeTool() {
+    if (ui.tool && ui.tool.id !== TOOL_ID) ui.tool.cancel();
+}
+
 // Only a ride just chosen in the game's menu: other plugins (like Scenery Manager) also preview existing rides.
 function isNewFlatRide(args, alreadyPlaced) {
     if (!enabled() || args.isFromTrackDesign || ownRides[args.ride] || handledRides[args.ride]) return false;
@@ -467,12 +781,20 @@ function isNewFlatRide(args, alreadyPlaced) {
 
 // The game previews the ride under the cursor as soon as it is chosen, before any tap places it.
 function onActionQuery(e) {
+    if (isNativeScenery(e)) {
+        if (e.args.flags & GHOST_FLAG) captureScenery(e, false);
+        return;
+    }
     if (e.action !== "trackplace" || ownQuery || !(e.args.flags & GHOST_FLAG) || !isNewFlatRide(e.args, false)) return;
     capture(e.args, null);
 }
 
 // If a tap still got through, the plugin takes back that placement and lets the player adjust it.
 function onActionExecute(e) {
+    if (isNativeScenery(e)) {
+        captureScenery(e, !(e.args.flags & GHOST_FLAG));
+        return;
+    }
     if (e.action !== "trackplace" || (e.args.flags & GHOST_FLAG) || !isNewFlatRide(e.args, true)) return;
     if (expectedPlace && e.args.x === expectedPlace.x && e.args.y === expectedPlace.y) return;
     capture(e.args, e.args);
@@ -513,6 +835,8 @@ function takeOver() {
     cancelOwnTool();
     clearGhosts();
     state.phase = "idle";
+    state.kind = "ride";
+    state.item = null;
     state.mark = null;
     state.busy = true;
     var afterRemoval = safely(function () {
@@ -563,7 +887,9 @@ function pickLocation() {
         onDown: safely(function (e) {
             if (!e.mapCoords || state.busy) return;
             var x = Math.floor(e.mapCoords.x / 32), y = Math.floor(e.mapCoords.y / 32);
-            if (forRide) {
+            if (forRide && isScenery()) {
+                markScenery(exactMapCoords(e));
+            } else if (forRide) {
                 markAt(x, y);
             } else {
                 markEntrance(e.mapCoords);
@@ -586,6 +912,12 @@ function changeHeight(delta) {
 
 function rotateMark() {
     if (state.phase !== "marked" || state.busy) return;
+    if (isScenery()) {
+        state.item.direction = (state.item.direction + 1) % 4;
+        state.ground = groundHeight(state.item);
+        updateGhost();
+        return;
+    }
     state.mark.direction = (state.mark.direction + 1) % 4;
     state.base = baseHeight(state.mark);
     updateGhost();
@@ -613,6 +945,27 @@ function placeRide() {
                 return;
             }
             startEntrance("entrance");
+        }));
+    }));
+}
+
+// The same item stays chosen, so the next tap starts another one at the same height and rotation.
+function placeSceneryItem() {
+    var item = state.item, z = currentZ();
+    state.busy = true;
+    refresh();
+    clearGhosts(safely(function () {
+        placeScenery(item, z, 0, safely(function (r) {
+            state.busy = false;
+            if (r.error) {
+                ui.showError(t("sceneryFailed"), errorText(r));
+                updateGhost();
+                return;
+            }
+            state.item = copyItem(item, {});
+            state.phase = "pick";
+            state.message = t("sceneryPlaced", money(r.cost));
+            refresh();
         }));
     }));
 }
@@ -673,7 +1026,8 @@ function placeEntrance() {
 
 function onPlace() {
     if (state.busy) return;
-    if (state.phase === "marked") placeRide();
+    if (state.phase === "marked" && isScenery()) placeSceneryItem();
+    else if (state.phase === "marked") placeRide();
     else if (state.phase === "entrance" || state.phase === "exit") placeEntrance();
 }
 
@@ -702,7 +1056,7 @@ function openWindow() {
         x: ui.width - WIDTH - 10,
         y: 40,
         width: WIDTH,
-        height: y + 176,
+        height: y + 194,
         widgets: [
             { type: "label", name: "status", x: 6, y: y, width: WIDTH - 12, height: 12, text: "" },
             { type: "groupbox", x: 4, y: y + 16, width: WIDTH - 8, height: 44, text: t("height") },
@@ -717,6 +1071,11 @@ function openWindow() {
                 type: "checkbox", name: "enabled", x: 6, y: y + 142, width: WIDTH - 12, height: 14,
                 text: t("confirm"), isChecked: enabled(),
                 onChange: function (checked) { context.sharedStorage.set(ENABLED_KEY, checked); }
+            },
+            {
+                type: "checkbox", name: "sceneryEnabled", x: 6, y: y + 160, width: WIDTH - 12, height: 14,
+                text: t("confirmScenery"), isChecked: sceneryEnabled(),
+                onChange: function (checked) { context.sharedStorage.set(SCENERY_ENABLED_KEY, checked); }
             }
         ],
         onClose: safely(function () {
@@ -727,18 +1086,19 @@ function openWindow() {
 }
 registerPlugin({
     name: "Colocar atracciones",
-    version: "1.0.1",
+    version: "1.1.0",
     authors: ["Ezequiel"],
     type: "local",
     licence: "MIT",
     targetApiVersion: 124,
     main: function () {
+        registerRefundAction();
         if (typeof ui === "undefined") return;
         ui.registerMenuItem(t("title"), safely(openWindow));
         context.subscribe("action.query", onActionQuery);
         context.subscribe("action.execute", onActionExecute);
         context.subscribe("map.changed", function () {
-            state.ghost = state.entranceGhost = null;
+            state.ghost = state.entranceGhost = state.sceneryGhost = null;
             ui.closeWindows(WINDOW_CLASS);
         });
     }

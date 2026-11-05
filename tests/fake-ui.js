@@ -1,11 +1,11 @@
 // Interfaz simulada para probar las ventanas de los plugins en el juego sin interfaz.
-var fakeWindows = {}, fakeTool = null, fakeErrors = [];
+var fakeWindows = {}, fakeTool = null, fakeErrors = [], fakeNative = [];
 var ui = {
     width: 1074, height: 500, windows: 0,
     tool: null,
     tileSelection: { tiles: [] },
-    mainViewport: { rotation: 0 },
-    getWindow: function (c) { return typeof c === "string" ? fakeWindows[c] || null : null; },
+    mainViewport: { rotation: 0, left: -2000, top: 300, zoom: 0 },
+    getWindow: function (c) { return typeof c === "string" ? fakeWindows[c] || null : fakeNative[c] || null; },
     openWindow: function (desc) {
         var widgets = {};
         desc.widgets.forEach(function (w) { widgets[w.name || Math.random()] = w; });
