@@ -13,3 +13,7 @@ bundle tests/build/test-alargar.js conectar-caminos/src/core.js tests/harness.js
 bundle dist/colocar-atracciones.js colocar-atracciones/src/texts.js shared/i18n.js colocar-atracciones/src/core.js colocar-atracciones/src/ui.js colocar-atracciones/src/main.js
 bundle tests/build/test-i18n.js conectar-caminos/src/texts.js shared/i18n.js tests/harness.js tests/test-i18n.js
 bundle tests/build/test-colores.js colocar-atracciones/src/texts.js shared/i18n.js colocar-atracciones/src/core.js tests/harness.js tests/test-colores.js
+bundle tests/build/test-circuito.js cerrar-circuito/src/track-support.js cerrar-circuito/src/core.js tests/harness.js tests/test-circuito.js
+bundle tests/build/test-circuito-quitar.js cerrar-circuito/src/track-support.js cerrar-circuito/src/core.js tests/harness.js tests/circuito-helpers.js tests/test-circuito-quitar.js
+bundle dist/cerrar-circuito.js cerrar-circuito/src/texts.js shared/i18n.js cerrar-circuito/src/track-support.js cerrar-circuito/src/core.js cerrar-circuito/src/ui.js cerrar-circuito/src/main.js
+bundle tests/build/test-circuito-ui.js tests/harness.js tests/fake-ui.js cerrar-circuito/src/texts.js shared/i18n.js cerrar-circuito/src/track-support.js cerrar-circuito/src/core.js cerrar-circuito/src/ui.js tests/circuito-helpers.js tests/test-circuito-ui.js
