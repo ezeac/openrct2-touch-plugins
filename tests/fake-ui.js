@@ -12,7 +12,8 @@ var ui = {
         fakeWindows[desc.classification] = { desc: desc, findWidget: function (n) { return widgets[n]; }, bringToFront: function () {}, close: function () { delete fakeWindows[desc.classification]; if (desc.onClose) desc.onClose(); } };
         return fakeWindows[desc.classification];
     },
-    closeWindows: function (c) { if (fakeWindows[c]) fakeWindows[c].close(); },
+    // Like the game, it only closes its own window kinds, never a plugin window by name.
+    closeWindows: function () {},
     activateTool: function (desc) { fakeTool = desc; ui.tool = { id: desc.id, cancel: function () { var d = fakeTool; fakeTool = null; ui.tool = null; if (d && d.onFinish) d.onFinish(); } }; },
     showError: function (a, b) { fakeErrors.push(a + ": " + b); log("ERROR EN PANTALLA " + a + ": " + b); },
     registerMenuItem: function () {}

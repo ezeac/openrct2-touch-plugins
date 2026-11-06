@@ -823,9 +823,9 @@ function sceneryHeightAllowed(offset) {
 }
 
 function reset(message) {
-    ui.closeWindows(ALIGN_WINDOW_CLASS);
     state.fixedZ = null;
     state.alignRef = null;
+    closeAlignChoice();
     cancelOwnTool();
     clearGhosts();
     var ride = pendingRide();
@@ -1113,7 +1113,8 @@ function takeOver() {
     state.item = null;
     state.mark = null;
     state.fixedZ = null;
-    ui.closeWindows(ALIGN_WINDOW_CLASS);
+    state.alignRef = null;
+    closeAlignChoice();
     state.busy = true;
     var afterRemoval = safely(function () {
         closeRideConstruction();
@@ -1304,9 +1305,15 @@ function openAlignChoice() {
             { type: "button", name: "top", x: 77, y: 18, width: 67, height: 24, text: t("alignTop"), onClick: safely(function () { applyAlign(true); }) }
         ],
         onClose: safely(function () {
-            if (state.phase === "align") cancelCopy();
+            if (state.alignRef) cancelCopy();
         })
     });
+}
+
+// The game's closeWindows only knows its own window kinds, so a plugin window is closed through itself.
+function closeAlignChoice() {
+    var choice = ui.getWindow(ALIGN_WINDOW_CLASS);
+    if (choice) choice.close();
 }
 
 // Next to it: its exact height, turn and corner on the free tile beside it. On top: its tile and corner, where it ends.
@@ -1319,7 +1326,7 @@ function applyAlign(onTop) {
     state.fixedZ = onTop ? ref.top : ref.z;
     state.offset = 0;
     state.phase = state.copyReturn;
-    ui.closeWindows(ALIGN_WINDOW_CLASS);
+    closeAlignChoice();
     pickLocation();
     var spot = { x: ref.x, y: ref.y };
     if (!onTop) {
@@ -1337,8 +1344,8 @@ function applyAlign(onTop) {
 }
 
 function cancelCopy() {
-    ui.closeWindows(ALIGN_WINDOW_CLASS);
     state.alignRef = null;
+    closeAlignChoice();
     state.phase = state.copyReturn;
     state.message = "";
     if (isPicking()) pickLocation();
