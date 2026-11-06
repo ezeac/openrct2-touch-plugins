@@ -16,6 +16,7 @@ var state = {
     error: null,
     entrance: null,
     entranceGhost: null,
+    copyReturn: null,
     kind: "ride",
     item: null,
     ground: 0,
@@ -84,7 +85,8 @@ function refresh() {
         pick: isScenery() ? t("sceneryPick") : t("pick"),
         marked: state.error || (isScenery() ? t("sceneryMarked") : t("marked")),
         entrance: state.entrance ? t("entranceMarked") : t("entrancePick"),
-        exit: state.entrance ? t("exitMarked") : t("exitPick")
+        exit: state.entrance ? t("exitMarked") : t("exitPick"),
+        copy: t("copyPick")
     };
     setWidget("status", { text: state.message || texts[state.phase] });
     setWidget("height", { text: marked ? "{BLACK}" + (state.offset >= 0 ? "+" : "") + state.offset : "{BLACK}-" });
@@ -96,6 +98,7 @@ function refresh() {
     setWidget("lower", { isDisabled: !marked || state.busy || limited(-1) });
     setWidget("raise", { isDisabled: !marked || state.busy || limited(1) });
     setWidget("rotate", { isDisabled: !marked || state.busy || (scenery && !canRotate(state.item)) });
+    setWidget("copy", { isDisabled: state.busy || ["idle", "pick", "marked"].indexOf(state.phase) < 0 });
     var ghost = isScenery() ? state.sceneryGhost : state.ghost;
     var canPlace = (marked && !state.error && ghost !== null) || (placingEntrance && state.entrance !== null);
     setWidget("place", { isDisabled: !canPlace || state.busy });
@@ -127,10 +130,17 @@ function clearGhosts(done) {
     });
 }
 
+// A ride chosen in the menu but not placed yet, also while copying from the map.
+function pendingRide() {
+    var phase = state.phase === "copy" ? state.copyReturn : state.phase;
+    return !isScenery() && state.mark && (phase === "pick" || phase === "marked") ? state.mark.ride : -1;
+}
+
 function reset(message) {
     cancelOwnTool();
     clearGhosts();
-    if (!isScenery() && state.mark && (state.phase === "pick" || state.phase === "marked")) demolishRide(state.mark.ride);
+    var ride = pendingRide();
+    if (ride >= 0) demolishRide(ride);
     state.phase = "idle";
     state.kind = "ride";
     state.item = null;
@@ -304,7 +314,7 @@ function undoAllNative(item, placedList, done, kept) {
 function takeOverScenery() {
     var captured = pendingScenery;
     pendingScenery = null;
-    var previousRide = !isScenery() && state.mark && (state.phase === "pick" || state.phase === "marked") ? state.mark.ride : -1;
+    var previousRide = pendingRide();
     cancelOwnTool();
     clearGhosts();
     state.busy = true;
@@ -399,7 +409,7 @@ function takeOver() {
         captured.mark.y = captured.placed.y / 32;
         captured.mark.direction = captured.placed.direction;
     }
-    var previous = state.mark && (state.phase === "pick" || state.phase === "marked") ? state.mark.ride : -1;
+    var previous = pendingRide();
     cancelOwnTool();
     clearGhosts();
     state.phase = "idle";
@@ -470,6 +480,80 @@ function pickLocation() {
             }, 200);
         }
     });
+}
+
+// The next tap on a scenery item chooses it, like the game's eyedropper; what was being placed stays until then.
+function startCopy() {
+    if (state.busy || ["idle", "pick", "marked"].indexOf(state.phase) < 0) return;
+    state.copyReturn = state.phase;
+    state.phase = "copy";
+    state.message = "";
+    refresh();
+    copyTool();
+}
+
+function copyTool() {
+    ui.activateTool({
+        id: TOOL_ID,
+        cursor: "picker",
+        filter: ["scenery", "large_scenery", "wall"],
+        onDown: safely(function (e) {
+            if (!state.busy) copyFrom(e);
+        }),
+        onFinish: function () {
+            if (state.phase !== "copy") return;
+            context.setTimeout(function () {
+                if (state.phase === "copy" && getWindow() && ui.tool === null) copyTool();
+            }, 200);
+        }
+    });
+}
+
+function copyRefused(message) {
+    state.message = message;
+    refresh();
+}
+
+function isAvailable(kind, index) {
+    return cheats.ignoreResearchStatus || park.research.isObjectResearched(ELEMENT_TYPES[kind], index);
+}
+
+function copyFrom(e) {
+    var tile = e.mapCoords && e.tileElementIndex !== undefined ? map.getTile(Math.floor(e.mapCoords.x / 32), Math.floor(e.mapCoords.y / 32)) : null;
+    var element = tile ? tile.elements[e.tileElementIndex] : null;
+    if (element && element.type === "wall") return copyRefused(t("copyWall"));
+    var kind = element && element.type === "small_scenery" ? "small" : element && element.type === "large_scenery" ? "large" : null;
+    if (!kind) return copyRefused(t("copyNothing"));
+    if (!isAvailable(kind, element.object)) return copyRefused(t("copyUnavailable"));
+    var item = {
+        kind: kind, x: tile.x, y: tile.y, direction: element.direction, object: element.object,
+        quadrant: kind === "small" ? element.quadrant : 0,
+        colours: [element.primaryColour, element.secondaryColour, element.tertiaryColour]
+    };
+    var previousRide = pendingRide();
+    state.busy = true;
+    refresh();
+    clearGhosts(safely(function () {
+        if (previousRide >= 0) demolishRide(previousRide);
+        state.busy = false;
+        state.kind = "scenery";
+        state.item = item;
+        state.mark = null;
+        state.offset = 0;
+        state.error = null;
+        state.phase = "pick";
+        state.message = t("copied");
+        refresh();
+        pickLocation();
+    }));
+}
+
+function cancelCopy() {
+    state.phase = state.copyReturn;
+    state.message = "";
+    if (isPicking()) pickLocation();
+    else cancelOwnTool();
+    refresh();
 }
 
 function changeHeight(delta) {
@@ -604,6 +688,7 @@ function onPlace() {
 
 function onCancel() {
     if (state.busy) return;
+    if (state.phase === "copy") return cancelCopy();
     if (state.phase === "entrance") {
         cancelOwnTool();
         clearGhosts();
@@ -634,7 +719,8 @@ function openWindow() {
             { type: "button", name: "lower", x: 12, y: y + 30, width: 50, height: 24, text: "-", onClick: safely(function () { changeHeight(-1); }) },
             { type: "label", name: "height", x: 66, y: y + 36, width: WIDTH - 132, height: 12, text: "", textAlign: "centred" },
             { type: "button", name: "raise", x: WIDTH - 62, y: y + 30, width: 50, height: 24, text: "+", onClick: safely(function () { changeHeight(1); }) },
-            { type: "button", name: "rotate", x: 6, y: y + 66, width: WIDTH - 12, height: 24, text: t("rotate"), onClick: safely(rotateMark) },
+            { type: "button", name: "rotate", x: 6, y: y + 66, width: half, height: 24, text: t("rotate"), onClick: safely(rotateMark) },
+            { type: "button", name: "copy", x: WIDTH / 2 + 2, y: y + 66, width: half, height: 24, text: t("copy"), onClick: safely(startCopy) },
             { type: "label", name: "cost", x: 8, y: y + 96, width: WIDTH - 16, height: 12, text: "" },
             { type: "button", name: "place", x: 6, y: y + 112, width: half, height: 24, text: t("place"), onClick: safely(onPlace) },
             { type: "button", name: "cancel", x: WIDTH / 2 + 2, y: y + 112, width: half, height: 24, text: t("cancel"), onClick: safely(onCancel) },

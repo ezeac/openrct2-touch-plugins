@@ -31,7 +31,13 @@ var TEXTS = {
         sceneryPlaced: "Placed for {0}. Tap for another one.",
         sceneryPlacedFree: "Placed. Tap for another one.",
         sceneryFailed: "The scenery could not be placed",
-        sceneryKept: "The game had already placed it. Tap for another."
+        sceneryKept: "The game had already placed it. Tap for another.",
+        copy: "Copy from map",
+        copyPick: "Tap a scenery item on the map.",
+        copied: "Copied. Tap where it goes.",
+        copyWall: "Walls: use the game's eyedropper.",
+        copyNothing: "That is not scenery. Tap another.",
+        copyUnavailable: "Not available in this park yet."
     },
     es: {
         title: "Colocar atracciones",
@@ -65,6 +71,12 @@ var TEXTS = {
         sceneryPlaced: "Colocado por {0}. Tocá para otro.",
         sceneryPlacedFree: "Colocado. Tocá para otro.",
         sceneryFailed: "No se pudo colocar el decorado",
-        sceneryKept: "El juego ya lo había colocado. Tocá para otro."
+        sceneryKept: "El juego ya lo había colocado. Tocá para otro.",
+        copy: "Copiar del mapa",
+        copyPick: "Tocá un decorado del mapa.",
+        copied: "Copiado. Tocá dónde va.",
+        copyWall: "Muros: usá el gotero del juego.",
+        copyNothing: "Eso no es un decorado. Tocá otro.",
+        copyUnavailable: "Todavía no está disponible en el parque."
     }
 };
