@@ -113,7 +113,11 @@ runTests("test-alinear", function (done) {
 
     // Un toque en el suelo al costado de un decorado lo toma igual; uno lejos de todo, no.
     function thinCase() {
-        var t0 = spots.filter(function (s) { return Math.abs(s.x - spot.x) + Math.abs(s.y - spot.y) > 3; })[0];
+        // Lejos en pantalla de lo apilado antes, para que el más cercano al toque sea el árbol.
+        var t0 = spots.filter(function (s) {
+            var p = screenOf(s.x * 32 + 16, s.y * 32 + 16, s.z + 24);
+            return !nearestScenery({ mapCoords: { x: s.x * 32, y: s.y * 32 }, screenCoords: { x: p.x, y: p.y } });
+        })[0];
         context.executeAction("smallsceneryplace", { x: t0.x * 32, y: t0.y * 32, z: 0, direction: 0, object: tree.index, quadrant: 0, primaryColour: 0, secondaryColour: 0, tertiaryColour: 0, flags: 0 }, function (r) {
             var el = realScenery(t0.x, t0.y, tree.index);
             check(!r.error && el, "árbol colocado");
@@ -125,13 +129,31 @@ runTests("test-alinear", function (done) {
             idle(function () {
                 check(state.phase === "pick" && state.item && state.item.object === tree.index, "copia el árbol tocado al costado: " + text(W, "status"));
                 click(W, "copy");
-                var far = screenOf(t0.x * 32 + 16, t0.y * 32 + 16, el.clearanceZ + 200);
+                var far, z = el.clearanceZ + 40;
+                do {
+                    far = screenOf(t0.x * 32 + 16, t0.y * 32 + 16, z += 16);
+                } while (nearestScenery({ mapCoords: { x: t0.x * 32, y: t0.y * 32 }, screenCoords: far }));
                 fakeTool.onDown({ isDown: true, screenCoords: { x: far.x, y: far.y }, mapCoords: { x: t0.x * 32, y: t0.y * 32 }, tileElementIndex: surfaceIndex(t0.x, t0.y) });
                 check(state.phase === "copy" && text(W, "status") === t("copyNothing"), "lejos de todo sigue el aviso: " + text(W, "status"));
-                click(W, "cancel");
-                check(fakeErrors.length === 0, "sin errores en pantalla");
-                done();
+                imageCase(t0, el);
             });
+        });
+    }
+
+    // Con la imagen que usa el juego, el toque se mide contra donde se dibuja y no contra la casilla.
+    function imageCase(t0, el) {
+        ui.imageManager = { getImageInfo: function () { return { offset: { x: 20, y: -30 }, width: 4, height: 30 }; } };
+        var base = screenOf(t0.x * 32 + 15, t0.y * 32 + 15, el.baseZ), tap = function (dx) {
+            fakeTool.onDown({ isDown: true, screenCoords: { x: base.x + dx, y: base.y - 10 }, mapCoords: { x: (t0.x - 1) * 32, y: (t0.y - 1) * 32 }, tileElementIndex: surfaceIndex(t0.x - 1, t0.y - 1) });
+        };
+        tap(6);
+        check(state.phase === "copy" && text(W, "status") === t("copyNothing"), "al costado de la casilla pero lejos de la imagen no copia: " + text(W, "status"));
+        tap(22 + 6);
+        delete ui.imageManager;
+        idle(function () {
+            check(state.phase === "pick" && state.item && state.item.object === tree.index, "al costado de la imagen copia el árbol: " + text(W, "status"));
+            check(fakeErrors.length === 0, "sin errores en pantalla");
+            done();
         });
     }
 });

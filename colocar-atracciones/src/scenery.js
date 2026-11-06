@@ -67,6 +67,12 @@ function isZAllowed(z) {
 
 var NEAR_PIXELS = 10;
 var NEAR_TILES = 10;
+var VOFFSET_CENTRE_FLAG = 1 << 1;
+var CAN_WITHER_FLAG = 1 << 5;
+var PROHIBIT_WALLS_FLAG = 1 << 18;
+var WITHER_AGES = [40, 55];
+// Tile corner the game draws from, for each camera rotation.
+var ROTATION_CORNERS = [[0, 0], [32, 0], [32, 32], [0, 32]];
 
 // The point of the tile where an item stands: its corner for quarter items, the centre otherwise.
 function anchorOf(element) {
@@ -77,6 +83,44 @@ function anchorOf(element) {
 function objectFlags(index) {
     var object = objectManager.getObject("small_scenery", index);
     return object ? object.flags : FULL_TILE_FLAG;
+}
+
+function turn(point, direction) {
+    return [[point[0], point[1]], [point[1], -point[0]], [-point[0], -point[1]], [-point[1], point[0]]][direction & 3];
+}
+
+// Image and draw offset of an item, as the game's paint code picks them.
+function imageOf(element, rotation) {
+    var object = objectManager.getObject(element.type, element.object);
+    if (!object) return null;
+    var direction = (element.direction + rotation) & 3;
+    if (element.type === "large_scenery") return { image: object.baseImageId + 4 + (element.sequence << 2) + direction, offset: [0, 0] };
+    var flags = object.flags, image = object.baseImageId + direction, offset;
+    if (flags & CAN_WITHER_FLAG) image += WITHER_AGES.filter(function (age) { return element.age >= age; }).length * 4;
+    if (!(flags & FULL_TILE_FLAG)) {
+        var corner = SCENERY_QUADRANT_POINTS[(element.quadrant + rotation) & 3];
+        offset = [corner[0] - 1, corner[1] - 1];
+    } else if (flags & HALF_TILE_FLAG) {
+        offset = [3, 3];
+    } else if (flags & VOFFSET_CENTRE_FLAG) {
+        offset = (flags & PROHIBIT_WALLS_FLAG) ? [1, 1] : [3, 3];
+    } else {
+        offset = [15, 15];
+    }
+    return { image: image, offset: offset };
+}
+
+// Screen box of an item in view units: its real image when the game tells it, else from its base to its top.
+function spriteBox(element, x, y, rotation) {
+    var drawn = ui.imageManager ? imageOf(element, rotation) : null;
+    var info = drawn ? ui.imageManager.getImageInfo(drawn.image) : null;
+    if (info && info.width > 0) {
+        var corner = ROTATION_CORNERS[rotation & 3], shift = turn(drawn.offset, rotation * 3);
+        var p = viewOf(x * 32 + corner[0] + shift[0], y * 32 + corner[1] + shift[1], element.baseZ, rotation);
+        return { x: p.x + info.offset.x + info.width / 2, top: p.y + info.offset.y, bottom: p.y + info.offset.y + info.height };
+    }
+    var a = anchorOf(element), base = viewOf(x * 32 + a[0], y * 32 + a[1], element.baseZ, rotation);
+    return { x: base.x, top: viewOf(x * 32 + a[0], y * 32 + a[1], element.clearanceZ, rotation).y, bottom: base.y };
 }
 
 // Thin items are hard to hit with a finger, so a tap that lands on the ground takes the scenery drawn closest to it.
@@ -92,13 +136,12 @@ function nearestScenery(e) {
             for (var i = 0; i < elements.length; i++) {
                 var el = elements[i];
                 if (el.isGhost || (el.type !== "small_scenery" && el.type !== "large_scenery")) continue;
-                var a = anchorOf(el), base = viewOf(x * 32 + a[0], y * 32 + a[1], el.baseZ, v.rotation);
-                var top = viewOf(x * 32 + a[0], y * 32 + a[1], el.clearanceZ, v.rotation);
-                var dy = aim.y > base.y ? aim.y - base.y : aim.y < top.y ? top.y - aim.y : 0;
-                var distance = Math.sqrt(Math.pow(base.x - aim.x, 2) + dy * dy) / f;
+                var box = spriteBox(el, x, y, v.rotation);
+                var dy = aim.y > box.bottom ? aim.y - box.bottom : aim.y < box.top ? box.top - aim.y : 0;
+                var distance = Math.sqrt(Math.pow(box.x - aim.x, 2) + dy * dy) / f;
                 // Among items at the same distance, the one in front is the one drawn over the others.
-                if (distance <= NEAR_PIXELS && (!best || distance < best.distance || (distance === best.distance && base.y > best.front))) {
-                    best = { tile: { x: x, y: y }, element: el, distance: distance, front: base.y };
+                if (distance <= NEAR_PIXELS && (!best || distance < best.distance || (distance === best.distance && box.bottom > best.front))) {
+                    best = { tile: { x: x, y: y }, element: el, distance: distance, front: box.bottom };
                 }
             }
         }
