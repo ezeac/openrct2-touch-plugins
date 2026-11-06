@@ -58,7 +58,52 @@ function canRotate(item) {
 
 function isHeightAllowed(ground, offset) {
     var z = ground + offset * SCENERY_STEP;
-    return offset === 0 || (z >= MIN_SCENERY_Z && z <= MAX_SCENERY_Z);
+    return offset === 0 || isZAllowed(z);
+}
+
+function isZAllowed(z) {
+    return z >= MIN_SCENERY_Z && z <= MAX_SCENERY_Z;
+}
+
+var NEAR_PIXELS = 10;
+var NEAR_TILES = 10;
+
+// The point of the tile where an item stands: its corner for quarter items, the centre otherwise.
+function anchorOf(element) {
+    if (element.type !== "small_scenery" || (objectFlags(element.object) & FULL_TILE_FLAG)) return [16, 16];
+    return SCENERY_QUADRANT_POINTS[element.quadrant];
+}
+
+function objectFlags(index) {
+    var object = objectManager.getObject("small_scenery", index);
+    return object ? object.flags : FULL_TILE_FLAG;
+}
+
+// Thin items are hard to hit with a finger, so a tap that lands on the ground takes the scenery drawn closest to it.
+function nearestScenery(e) {
+    var v = ui.mainViewport;
+    if (!e.mapCoords || !e.screenCoords || !v || v.left === undefined) return null;
+    var f = Math.pow(2, v.zoom), aim = { x: v.left + e.screenCoords.x * f, y: v.top + e.screenCoords.y * f };
+    var cx = Math.floor(e.mapCoords.x / 32), cy = Math.floor(e.mapCoords.y / 32), best = null;
+    for (var x = cx - NEAR_TILES; x <= cx + NEAR_TILES; x++) {
+        for (var y = cy - NEAR_TILES; y <= cy + NEAR_TILES; y++) {
+            if (x < 1 || y < 1 || x >= map.size.x - 1 || y >= map.size.y - 1) continue;
+            var elements = map.getTile(x, y).elements;
+            for (var i = 0; i < elements.length; i++) {
+                var el = elements[i];
+                if (el.isGhost || (el.type !== "small_scenery" && el.type !== "large_scenery")) continue;
+                var a = anchorOf(el), base = viewOf(x * 32 + a[0], y * 32 + a[1], el.baseZ, v.rotation);
+                var top = viewOf(x * 32 + a[0], y * 32 + a[1], el.clearanceZ, v.rotation);
+                var dy = aim.y > base.y ? aim.y - base.y : aim.y < top.y ? top.y - aim.y : 0;
+                var distance = Math.sqrt(Math.pow(base.x - aim.x, 2) + dy * dy) / f;
+                // Among items at the same distance, the one in front is the one drawn over the others.
+                if (distance <= NEAR_PIXELS && (!best || distance < best.distance || (distance === best.distance && base.y > best.front))) {
+                    best = { tile: { x: x, y: y }, element: el, distance: distance, front: base.y };
+                }
+            }
+        }
+    }
+    return best;
 }
 
 // Ground height at an exact point of a tile, following the game's own formula for sloped land and water.
