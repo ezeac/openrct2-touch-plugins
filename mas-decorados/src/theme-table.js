@@ -46,3 +46,5 @@ var THEME_TABLE = {
     "rct2ww.scenery_group.scgnamrc": [113, "rct2ww.scenery_small.campfani"],
     "rct2ww.scenery_group.scgsamer": [94, "rct2ww.scenery_small.wmayan01"]
 };
+var STOCK_PREFIXES = ["couger", "mamabear", "official", "openrct2", "rct1", "rct1aa", "rct1beta", "rct1dlc", "rct1ll", "rct1tw", "rct2", "rct2dlc", "rct2tt", "rct2ww", "toontowner", "uces"];
+var STOCK_LOOSE = ["rct1.scenery_wall.playing_card_wall_1", "rct1.scenery_wall.playing_card_wall_2", "rct1.scenery_wall.roman_column_wall", "rct1.scenery_wall.wooden_fence_brown", "rct1.scenery_wall.wooden_fence_brown_gate", "rct1.scenery_wall.wooden_fence_red", "rct1.scenery_wall.wooden_fence_white", "rct1aa.scenery_wall.glass_wall", "rct1aa.scenery_wall.wooden_post_wall_1", "rct1aa.scenery_wall.wooden_post_wall_2", "rct1ll.scenery_wall.medieval_wooden_fence", "rct1ll.scenery_wall.wooden_fence_brown_snow", "rct2ww.scenery_large.damtower", "toontowner.scenery_small.xxbbbr01"];

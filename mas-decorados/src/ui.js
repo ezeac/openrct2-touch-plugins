@@ -30,6 +30,7 @@ function setWidget(name, props) {
 }
 
 function themeName(theme) {
+    if (theme.loose) return theme.identifier === GAME_ROW ? t("looseGame") : t("looseBy", theme.author || t("noAuthor"));
     return theme.expansion ? t("expansion", theme.name, theme.expansion) : theme.name;
 }
 
@@ -81,7 +82,17 @@ function closeSceneryWindow() {
     }
 }
 
+function looseDetail(result) {
+    if (!result.failed && !result.blank && !result.leftOut) return counted("added", result.added);
+    var parts = [t("partAdded", result.added)];
+    if (result.leftOut) parts.push(t("partLimit", result.leftOut));
+    if (result.blank) parts.push(t("partBlank", result.blank));
+    if (result.failed) parts.push(t("partFailed", result.failed));
+    return parts.join(" ");
+}
+
 function resultDetail(theme, result) {
+    if (theme.loose) return looseDetail(result);
     if (result.error === "missingData") return t("missingData", theme.expansion);
     if (result.error) return t("loadFailed");
     if (result.failed > 0) return t("addedFailed", result.added, result.failed);
@@ -98,7 +109,7 @@ function onAction() {
     if (!theme) return reload(themeName(selected), t("completed"));
     state.busy = true;
     refresh();
-    addTheme(theme, safely(function (result) {
+    (theme.loose ? addLoose : addTheme)(theme, safely(function (result) {
         state.busy = false;
         if (!result.error) closeSceneryWindow();
         reload(themeName(theme), resultDetail(theme, result));

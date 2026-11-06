@@ -12,8 +12,8 @@ def read(path):
 root = sys.argv[1].rstrip('/')
 paths = glob.glob(root + '/**/*.json', recursive=True) + glob.glob(root + '/**/*.parkobj', recursive=True)
 rows = []
-for path in sorted(paths, key=lambda p: p.rsplit('/', 1)[1]):
-    data = read(path)
+objects = [read(path) for path in sorted(paths, key=lambda p: p.rsplit('/', 1)[1])]
+for data in objects:
     if data.get('objectType') != 'scenery_group':
         continue
     scenery = [e for e in data.get('properties', {}).get('entries', []) if e.split('.')[1] != 'peep_animations']
@@ -25,3 +25,11 @@ print('// Por tema: cantidad de decorados, sin disfraces de animadores, y el pri
 print('var THEME_TABLE = {')
 print(',\n'.join(rows))
 print('};')
+
+# Lo que trae el juego: los prefijos de sus objetos, y los decorados que no están en ningún tema.
+SCENERY = ('scenery_small', 'scenery_large', 'scenery_wall', 'footpath_banner', 'footpath_item')
+members = set(e for d in objects if d.get('objectType') == 'scenery_group' for e in d.get('properties', {}).get('entries', []))
+prefixes = sorted(set(d['id'].split('.')[0] for d in objects))
+loose = sorted(d['id'] for d in objects if d.get('objectType') in SCENERY and d['id'] not in members)
+print('var STOCK_PREFIXES = %s;' % json.dumps(prefixes))
+print('var STOCK_LOOSE = %s;' % json.dumps(loose))

@@ -1,6 +1,6 @@
 registerPlugin({
     name: "Más decorados",
-    version: "1.0.0",
+    version: "1.1.0",
     authors: ["Ezequiel"],
     type: "local",
     licence: "MIT",

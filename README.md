@@ -33,6 +33,7 @@ Most parks load only some of the scenery themes the game has installed. This plu
 - **Complete:** loads what a theme is missing, or makes available a theme the scenario still keeps for research.
 - Themes from Wacky Worlds and Time Twister need those expansions' files. If the game does not have them, the plugin says so and adds nothing.
 - Themes are never removed, so scenery already placed is safe. Adding a theme skips the scenario's research for it.
+- **Loose items:** scenery installed outside any theme (the game's own RCT1 fences, or a pack you copied into the `object` folder) is listed by author, one row each. "Add" loads the whole row: each item shows up in the tab of the theme it was made for, if the park has it, or in the miscellaneous tab. Whatever goes over the game's limit stays listed, and items whose images are missing are dropped.
 
 ## Install
 
@@ -57,6 +58,7 @@ Plugins para construir más cómodo en OpenRCT2 desde el celular o la tablet. Pr
 - **Decorados:** con los decorados simples y grandes pasa lo mismo, con "+" y "−" de a medio escalón y "Rotar". En los de cuarto de casilla, el toque elige la esquina. Los muros (vallas, setos) no se tocan, así que se siguen colocando de a varios arrastrando.
 - **Copiar del mapa:** en vez de buscar un decorado en el menú, tocá "Copiar del mapa" y después un decorado del mapa. Queda listo para colocar otro igual, con su rotación y sus colores. Los muros no se copian (para eso está el gotero del juego), ni los decorados que el parque todavía no investigó.
 - **Más decorados:** lista los temas de decorados instalados que el parque no tiene o tiene a medias, y los agrega o completa en plena partida, sin esperar la investigación. Los de las expansiones avisan si faltan sus archivos. Nunca quita temas, así que los decorados ya colocados no se rompen.
+- **Objetos sueltos:** los decorados instalados que no son de ningún tema (las cercas de RCT1 que trae el juego, o un paquete copiado a la carpeta `object`) aparecen agrupados por autor. "Agregar" carga toda la fila: cada objeto aparece en la pestaña del tema para el que fue hecho, si el parque lo tiene, o en la de objetos misceláneos. Lo que supera el límite del juego queda en la lista, y los que no tienen imágenes se descartan.
 
 Para instalarlos, copiá los `.js` de `dist/` a la carpeta `openrct2-user/plugin` del celular.
 

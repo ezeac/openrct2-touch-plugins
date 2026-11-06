@@ -23,7 +23,14 @@ var TEXTS = {
         addedFailed: "Added: {0}. Could not be loaded: {1}.",
         completed: "Complete now: reopen the scenery menu.",
         missingData: "Needs the {0} files, which this game lacks.",
-        loadFailed: "It could not be loaded."
+        loadFailed: "It could not be loaded.",
+        looseGame: "Loose items from the game",
+        looseBy: "Loose items by {0}",
+        noAuthor: "unknown author",
+        partAdded: "Added: {0}.",
+        partLimit: "Over the game's limit: {0}.",
+        partBlank: "Without images: {0}.",
+        partFailed: "With errors: {0}."
     },
     es: {
         title: "Más decorados",
@@ -47,7 +54,14 @@ var TEXTS = {
         addedFailed: "Agregados: {0}. No se pudieron cargar: {1}.",
         completed: "Quedó completo: reabrí el menú de decorados.",
         missingData: "Necesita los archivos de {0}, que este juego no tiene.",
-        loadFailed: "No se pudo cargar."
+        loadFailed: "No se pudo cargar.",
+        looseGame: "Objetos sueltos del juego",
+        looseBy: "Objetos sueltos de {0}",
+        noAuthor: "autor desconocido",
+        partAdded: "Agregados: {0}.",
+        partLimit: "Superan el límite del juego: {0}.",
+        partBlank: "Sin imágenes: {0}.",
+        partFailed: "Con errores: {0}."
     }
 };
 var translations = null;
@@ -112,6 +126,8 @@ var THEME_TABLE = {
     "rct2ww.scenery_group.scgnamrc": [113, "rct2ww.scenery_small.campfani"],
     "rct2ww.scenery_group.scgsamer": [94, "rct2ww.scenery_small.wmayan01"]
 };
+var STOCK_PREFIXES = ["couger", "mamabear", "official", "openrct2", "rct1", "rct1aa", "rct1beta", "rct1dlc", "rct1ll", "rct1tw", "rct2", "rct2dlc", "rct2tt", "rct2ww", "toontowner", "uces"];
+var STOCK_LOOSE = ["rct1.scenery_wall.playing_card_wall_1", "rct1.scenery_wall.playing_card_wall_2", "rct1.scenery_wall.roman_column_wall", "rct1.scenery_wall.wooden_fence_brown", "rct1.scenery_wall.wooden_fence_brown_gate", "rct1.scenery_wall.wooden_fence_red", "rct1.scenery_wall.wooden_fence_white", "rct1aa.scenery_wall.glass_wall", "rct1aa.scenery_wall.wooden_post_wall_1", "rct1aa.scenery_wall.wooden_post_wall_2", "rct1ll.scenery_wall.medieval_wooden_fence", "rct1ll.scenery_wall.wooden_fence_brown_snow", "rct2ww.scenery_large.damtower", "toontowner.scenery_small.xxbbbr01"];
 var RESEARCH_ACTION = "masdecorados_research";
 var ITEM_TYPES = {
     scenery_small: "small_scenery", scenery_large: "large_scenery", scenery_wall: "wall",
@@ -234,10 +250,17 @@ function listThemes() {
         }
         themes.push(theme);
     });
-    return themes.sort(function (a, b) {
-        var ka = sortKey(a.name), kb = sortKey(b.name);
-        return ka < kb ? -1 : ka > kb ? 1 : 0;
-    });
+    var byName = function (key) {
+        return function (a, b) {
+            var ka = sortKey(key(a)), kb = sortKey(key(b));
+            return ka < kb ? -1 : ka > kb ? 1 : 0;
+        };
+    };
+    return themes.sort(byName(function (th) {
+        return th.name;
+    })).concat(looseRows(loaded).sort(byName(function (row) {
+        return row.identifier === GAME_ROW ? "" : " " + row.author;
+    })));
 }
 
 // A missing image file still loads, but with blank images: the game has no other way to tell.
@@ -315,6 +338,75 @@ function addTheme(theme, done) {
     });
     finish(group.index, { added: added, failed: failed });
 }
+var LOOSE_LIMITS = { small_scenery: 2047, large_scenery: 2047, wall: 2047, banner: 255, footpath_addition: 255 };
+var LOOSE_PREFIX = "loose:";
+var GAME_ROW = LOOSE_PREFIX + "game";
+
+// Items that loaded without images in this session: loading them again would only restart research.
+var blankLoose = {};
+
+function isStock(identifier) {
+    return STOCK_PREFIXES.indexOf(identifier.split(".")[0]) >= 0 && STOCK_LOOSE.indexOf(identifier) < 0;
+}
+
+// Installed scenery that no theme brings, grouped by its author so a big pack can be added in parts.
+function looseRows(loaded) {
+    var inThemes = {};
+    objectManager.getAllObjects("scenery_group").forEach(function (group) {
+        group.items.forEach(function (id) {
+            inThemes[id] = true;
+        });
+    });
+    var rows = {};
+    objectManager.installedObjects.forEach(function (o) {
+        if (!LOOSE_LIMITS[o.type] || loaded[o.identifier] || inThemes[o.identifier] || blankLoose[o.identifier] || isStock(o.identifier)) return;
+        var key = STOCK_LOOSE.indexOf(o.identifier) >= 0 ? GAME_ROW : LOOSE_PREFIX + (o.authors[0] || "");
+        if (!rows[key]) rows[key] = { identifier: key, author: o.authors[0] || "", loose: true, status: "new", items: [] };
+        rows[key].items.push({ id: o.identifier, type: o.type });
+    });
+    return Object.keys(rows).map(function (key) {
+        rows[key].count = rows[key].items.length;
+        return rows[key];
+    });
+}
+
+function freeSlots() {
+    var free = {};
+    for (var type in LOOSE_LIMITS) free[type] = LOOSE_LIMITS[type] - objectManager.getAllObjects(type).length;
+    return free;
+}
+
+// Loads what fits in one go, since every load restarts research, and drops what came without images.
+function addLoose(row, done) {
+    var research = park.research, restore = { stage: research.stage, progress: research.progress };
+    var free = freeSlots(), ids = [], leftOut = 0;
+    row.items.forEach(function (item) {
+        if (free[item.type] > 0) {
+            free[item.type]--;
+            ids.push(item.id);
+        } else {
+            leftOut++;
+        }
+    });
+    var added = 0, failed = 0, blank = 0;
+    var objects = ids.length > 0 ? objectManager.load(ids) : [];
+    objects.forEach(function (object, i) {
+        if (!object) {
+            failed++;
+        } else if (hasBlankImages(object)) {
+            objectManager.unload(ids[i]);
+            blankLoose[ids[i]] = true;
+            blank++;
+        } else {
+            added++;
+        }
+    });
+    var result = { added: added, failed: failed, blank: blank, leftOut: leftOut };
+    if (ids.length === 0) return done(result);
+    context.executeAction(RESEARCH_ACTION, { object: -1, stage: restore.stage, progress: restore.progress }, function () {
+        done(result);
+    });
+}
 var WINDOW_CLASS = "mas-decorados";
 var SCENERY_WINDOW_CLASS = 18;
 var WIDTH = 460;
@@ -347,6 +439,7 @@ function setWidget(name, props) {
 }
 
 function themeName(theme) {
+    if (theme.loose) return theme.identifier === GAME_ROW ? t("looseGame") : t("looseBy", theme.author || t("noAuthor"));
     return theme.expansion ? t("expansion", theme.name, theme.expansion) : theme.name;
 }
 
@@ -398,7 +491,17 @@ function closeSceneryWindow() {
     }
 }
 
+function looseDetail(result) {
+    if (!result.failed && !result.blank && !result.leftOut) return counted("added", result.added);
+    var parts = [t("partAdded", result.added)];
+    if (result.leftOut) parts.push(t("partLimit", result.leftOut));
+    if (result.blank) parts.push(t("partBlank", result.blank));
+    if (result.failed) parts.push(t("partFailed", result.failed));
+    return parts.join(" ");
+}
+
 function resultDetail(theme, result) {
+    if (theme.loose) return looseDetail(result);
     if (result.error === "missingData") return t("missingData", theme.expansion);
     if (result.error) return t("loadFailed");
     if (result.failed > 0) return t("addedFailed", result.added, result.failed);
@@ -415,7 +518,7 @@ function onAction() {
     if (!theme) return reload(themeName(selected), t("completed"));
     state.busy = true;
     refresh();
-    addTheme(theme, safely(function (result) {
+    (theme.loose ? addLoose : addTheme)(theme, safely(function (result) {
         state.busy = false;
         if (!result.error) closeSceneryWindow();
         reload(themeName(theme), resultDetail(theme, result));
@@ -460,7 +563,7 @@ function openWindow() {
 }
 registerPlugin({
     name: "Más decorados",
-    version: "1.0.0",
+    version: "1.1.0",
     authors: ["Ezequiel"],
     type: "local",
     licence: "MIT",

@@ -21,7 +21,14 @@ var TEXTS = {
         addedFailed: "Added: {0}. Could not be loaded: {1}.",
         completed: "Complete now: reopen the scenery menu.",
         missingData: "Needs the {0} files, which this game lacks.",
-        loadFailed: "It could not be loaded."
+        loadFailed: "It could not be loaded.",
+        looseGame: "Loose items from the game",
+        looseBy: "Loose items by {0}",
+        noAuthor: "unknown author",
+        partAdded: "Added: {0}.",
+        partLimit: "Over the game's limit: {0}.",
+        partBlank: "Without images: {0}.",
+        partFailed: "With errors: {0}."
     },
     es: {
         title: "Más decorados",
@@ -45,6 +52,13 @@ var TEXTS = {
         addedFailed: "Agregados: {0}. No se pudieron cargar: {1}.",
         completed: "Quedó completo: reabrí el menú de decorados.",
         missingData: "Necesita los archivos de {0}, que este juego no tiene.",
-        loadFailed: "No se pudo cargar."
+        loadFailed: "No se pudo cargar.",
+        looseGame: "Objetos sueltos del juego",
+        looseBy: "Objetos sueltos de {0}",
+        noAuthor: "autor desconocido",
+        partAdded: "Agregados: {0}.",
+        partLimit: "Superan el límite del juego: {0}.",
+        partBlank: "Sin imágenes: {0}.",
+        partFailed: "Con errores: {0}."
     }
 };

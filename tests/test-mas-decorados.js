@@ -50,7 +50,7 @@ runTests("test-mas-decorados", function (done) {
     log("investigación al empezar: " + JSON.stringify(studyBefore));
     check(studyBefore.stage === "designing" && studyBefore.item !== "null", "parque3 tiene algo en investigación");
     openWindow();
-    var keys = state.themes.map(function (th) { return sortKey(th.name); });
+    var keys = state.themes.filter(function (th) { return !th.loose; }).map(function (th) { return sortKey(th.name); });
     check(keys.every(function (k, i) { return i === 0 || keys[i - 1] <= k; }), "lista ordenada sin importar mayúsculas ni acentos");
     check(THEME_TABLE["rct2dlc.scenery_group.scgpanda"] !== undefined, "la tabla incluye los temas empaquetados en .parkobj");
     log("temas en la lista: " + state.themes.length + " | " + state.themes.slice(0, 4).map(function (th) { return th.name + " = " + statusText(th); }).join(" ; "));
@@ -127,8 +127,53 @@ runTests("test-mas-decorados", function (done) {
                 check(r.isObjectResearched("scenery_group", group.index) && themeRow(group.identifier) < 0, "el tema queda investigado y sale de la lista");
                 check(r.expectedItem === null || r.expectedItem.object !== group.index || r.expectedItem.type !== "scenery", "la investigación pasa a otra cosa");
                 check(fakeErrors.length === 0, "sin errores en pantalla");
-                done();
+                looseCase();
             });
+        });
+    }
+
+    // Objetos sueltos instalados por tests/objetos-prueba.py: dos autores, uno sin autor, más los del juego.
+    function looseCase() {
+        reload();
+        var rows = state.themes.filter(function (th) { return th.loose; });
+        log("filas sueltas: " + rows.map(function (r) { return themeName(r) + " = " + statusText(r); }).join(" ; "));
+        var byKey = function (key) { return state.themes.filter(function (th) { return th.identifier === key; })[0]; };
+        var a = byKey(LOOSE_PREFIX + "Autor A"), b = byKey(LOOSE_PREFIX + "Autor B"), none = byKey(LOOSE_PREFIX), game = byKey(GAME_ROW);
+        check(a && a.count === 3 && b && b.count === 2 && none && none.count === 1, "una fila por autor con su cantidad");
+        check(game && game.count === STOCK_LOOSE.length, "fila con los sueltos del juego: " + (game && game.count));
+        check(rows[0] === game && state.themes.indexOf(game) > state.themes.filter(function (th) { return !th.loose; }).length - 1, "las filas sueltas van después de los temas, primero la del juego");
+        var studyBefore = researchState(), smalls = objectManager.getAllObjects("small_scenery").length;
+        // Límite lleno: sólo entra uno de los tres de Autor A.
+        LOOSE_LIMITS.small_scenery = smalls + 1;
+        pickAndRun(a.identifier, function (label) {
+            LOOSE_LIMITS.small_scenery = 2047;
+            log("límite: " + text(W, "message") + " | " + text(W, "detail"));
+            check(label === t("add") && text(W, "detail") === [t("partAdded", 1), t("partLimit", 2)].join(" "), "carga lo que entra y avisa lo que quedó afuera");
+            var left = byKey(a.identifier);
+            check(left && left.count === 2, "la fila sigue con lo que falta: " + (left && left.count));
+            var arbol = loadedObject("prueba.scenery_small.arbol1") || loadedObject("prueba.scenery_small.arbol2") || loadedObject("prueba.scenery_small.arbol3");
+            check(arbol && park.research.isObjectResearched("small_scenery", arbol.index), "el cargado queda disponible");
+            check(arbol && canPlace(arbol.identifier), "y se puede colocar");
+            var after = researchState();
+            check(after.stage === studyBefore.stage && after.item === studyBefore.item && after.progress >= studyBefore.progress, "la investigación sigue igual: " + JSON.stringify(after));
+            blankCase(b);
+        });
+    }
+
+    // Un objeto que carga sin imágenes se descarta y la fila sale de la lista.
+    function blankCase(b) {
+        var blankId = "prueba.scenery_large.tienda1";
+        // Sin interfaz no hay imágenes que mirar, así que se simula cuál vino en blanco.
+        var realCheck = hasBlankImages;
+        hasBlankImages = function (o) { return o.identifier === blankId; };
+        pickAndRun(b.identifier, function () {
+            hasBlankImages = realCheck;
+            log("sin imágenes: " + text(W, "detail"));
+            check(text(W, "detail") === [t("partAdded", 1), t("partBlank", 1)].join(" "), "avisa el que vino sin imágenes");
+            check(!loadedObject(blankId) && loadedObject("prueba.scenery_wall.muro1") !== null, "lo descarta y deja el otro");
+            check(state.themes.filter(function (th) { return th.identifier === b.identifier; }).length === 0, "la fila sale de la lista");
+            check(fakeErrors.length === 0, "sin errores en pantalla");
+            done();
         });
     }
 });

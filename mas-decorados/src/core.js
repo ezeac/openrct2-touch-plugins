@@ -120,10 +120,17 @@ function listThemes() {
         }
         themes.push(theme);
     });
-    return themes.sort(function (a, b) {
-        var ka = sortKey(a.name), kb = sortKey(b.name);
-        return ka < kb ? -1 : ka > kb ? 1 : 0;
-    });
+    var byName = function (key) {
+        return function (a, b) {
+            var ka = sortKey(key(a)), kb = sortKey(key(b));
+            return ka < kb ? -1 : ka > kb ? 1 : 0;
+        };
+    };
+    return themes.sort(byName(function (th) {
+        return th.name;
+    })).concat(looseRows(loaded).sort(byName(function (row) {
+        return row.identifier === GAME_ROW ? "" : " " + row.author;
+    })));
 }
 
 // A missing image file still loads, but with blank images: the game has no other way to tell.
