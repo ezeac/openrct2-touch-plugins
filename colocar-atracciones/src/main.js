@@ -13,6 +13,8 @@ registerPlugin({
         context.subscribe("action.execute", onActionExecute);
         context.subscribe("map.changed", function () {
             state.ghost = state.entranceGhost = state.sceneryGhost = null;
+            state.mark = null;
+            state.item = null;
             ui.closeWindows(WINDOW_CLASS);
         });
     }

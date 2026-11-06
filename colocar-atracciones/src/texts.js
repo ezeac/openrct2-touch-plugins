@@ -29,7 +29,9 @@ var TEXTS = {
         sceneryPick: "Tap where the scenery goes.",
         sceneryMarked: "Tap elsewhere to move it, or Place.",
         sceneryPlaced: "Placed for {0}. Tap for another one.",
-        sceneryFailed: "The scenery could not be placed"
+        sceneryPlacedFree: "Placed. Tap for another one.",
+        sceneryFailed: "The scenery could not be placed",
+        sceneryKept: "The game had already placed it. Tap for another."
     },
     es: {
         title: "Colocar atracciones",
@@ -61,6 +63,8 @@ var TEXTS = {
         sceneryPick: "Tocá dónde va el decorado.",
         sceneryMarked: "Tocá otro lugar para moverlo o Colocar.",
         sceneryPlaced: "Colocado por {0}. Tocá para otro.",
-        sceneryFailed: "No se pudo colocar el decorado"
+        sceneryPlacedFree: "Colocado. Tocá para otro.",
+        sceneryFailed: "No se pudo colocar el decorado",
+        sceneryKept: "El juego ya lo había colocado. Tocá para otro."
     }
 };

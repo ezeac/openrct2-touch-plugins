@@ -1,5 +1,11 @@
 var SCENERY_STEP = 8;
 var FULL_TILE_FLAG = 1;
+var ROTATABLE_FLAG = 1 << 3;
+var DIAGONAL_FLAG = 1 << 8;
+var HALF_TILE_FLAG = 1 << 24;
+var THREE_QUARTERS_FLAG = 1 << 25;
+var MIN_SCENERY_Z = 16;
+var MAX_SCENERY_Z = 1784;
 var SCENERY_WINDOW_CLASS = 18;
 var REFUND_ACTION = "colocaratracciones_refund";
 var SCENERY_ACTIONS = { smallsceneryplace: "small", largesceneryplace: "large" };
@@ -7,16 +13,19 @@ var ELEMENT_TYPES = { small: "small_scenery", large: "large_scenery" };
 
 // The game charges a removal price, so this gives back the difference to undo a placement for free.
 function registerRefundAction() {
-    context.registerAction(REFUND_ACTION, function () {
-        return {};
-    }, function (e) {
-        park.cash += e.args.amount;
-        return {};
+    var check = function (e) {
+        var amount = e.args.amount;
+        return typeof amount === "number" && isFinite(amount) && amount >= 0 ? {} : { error: 1, errorMessage: "Invalid amount" };
+    };
+    context.registerAction(REFUND_ACTION, check, function (e) {
+        var result = check(e);
+        if (!result.error) park.cash += e.args.amount;
+        return result;
     });
 }
 
 function refund(amount, done) {
-    if (amount <= 0) {
+    if (amount <= 0 || park.getFlag("noMoney")) {
         if (done) done();
         return;
     }
@@ -25,24 +34,81 @@ function refund(amount, done) {
     });
 }
 
-function isFullTile(item) {
-    if (item.kind !== "small") return true;
-    var object = objectManager.getObject("small_scenery", item.object);
-    return !object || (object.flags & FULL_TILE_FLAG) !== 0;
+function smallFlags(item) {
+    var object = item.kind === "small" ? objectManager.getObject("small_scenery", item.object) : null;
+    return object ? object.flags : FULL_TILE_FLAG;
 }
 
-// The tool reports the tile corner, so the exact spot is worked out from the screen, at the tile's ground height.
-function exactMapCoords(e) {
-    var v = ui.mainViewport, tile = { x: Math.floor(e.mapCoords.x / 32) * 32, y: Math.floor(e.mapCoords.y / 32) * 32 };
-    if (!e.screenCoords || !v || v.left === undefined) return e.mapCoords;
-    var surface = surfaceOf(tile.x / 32, tile.y / 32), z = surface ? surface.baseZ : 0, f = Math.pow(2, v.zoom);
-    var a = v.left + e.screenCoords.x * f, b = 2 * (v.top + e.screenCoords.y * f + z);
-    var inverse = [[(b - a) / 2, (b + a) / 2], [(-a - b) / 2, (b - a) / 2], [(a - b) / 2, (-a - b) / 2], [(a + b) / 2, (a - b) / 2]];
-    var p = inverse[v.rotation & 3];
-    return {
-        x: Math.min(tile.x + 31, Math.max(tile.x, Math.floor(p[0]))),
-        y: Math.min(tile.y + 31, Math.max(tile.y, Math.floor(p[1])))
+function isFullTile(item) {
+    return (smallFlags(item) & FULL_TILE_FLAG) !== 0;
+}
+
+// The game keeps quadrant 0 for these shapes, whatever corner was asked for.
+function ignoresQuadrant(item) {
+    var flags = smallFlags(item);
+    if (!(flags & FULL_TILE_FLAG) && (flags & DIAGONAL_FLAG)) return false;
+    return (flags & (DIAGONAL_FLAG | HALF_TILE_FLAG | THREE_QUARTERS_FLAG)) !== 0;
+}
+
+function canRotate(item) {
+    return item.kind !== "small" || (smallFlags(item) & ROTATABLE_FLAG) !== 0;
+}
+
+function isHeightAllowed(ground, offset) {
+    var z = ground + offset * SCENERY_STEP;
+    return offset === 0 || (z >= MIN_SCENERY_Z && z <= MAX_SCENERY_Z);
+}
+
+// Ground height at an exact point of a tile, following the game's own formula for sloped land and water.
+function groundAt(x, y) {
+    var surface = surfaceOf(Math.floor(x / 32), Math.floor(y / 32));
+    if (!surface) return 0;
+    var xl = x & 31, yl = y & 31, slope = surface.slope & 15, steep = surface.slope & 16, height = surface.baseZ;
+    var half = function (n) {
+        return n < 0 ? Math.ceil(n / 2) : Math.floor(n / 2);
     };
+    var corner = { 1: xl + yl - 32, 2: xl - yl, 4: 32 - yl - xl, 8: yl - xl }[slope];
+    if (corner !== undefined && corner > 0) height += half(corner);
+    var side = { 3: xl, 6: 32 - yl, 9: yl, 12: 32 - xl }[slope];
+    if (side !== undefined) height += half(side);
+    var down = { 7: [xl + 32 - yl, xl - yl], 11: [xl + yl, xl + yl - 32], 13: [32 - xl + yl, yl - xl], 14: [64 - xl - yl, 32 - yl - xl] }[slope];
+    if (down) {
+        if (steep) return Math.max(height + half(down[0]), surface.waterHeight);
+        height += 16;
+        if (down[1] < 0) height += half(down[1]);
+    }
+    var valley = { 10: Math.abs(xl - yl), 5: Math.abs(xl + yl - 32) }[slope];
+    if (valley !== undefined) height += half(valley);
+    return Math.max(height, surface.waterHeight);
+}
+
+// Screen position of a map point for each camera rotation, in view units.
+function viewOf(x, y, z, rotation) {
+    switch (rotation & 3) {
+        case 0: return { x: y - x, y: (x + y) / 2 - z };
+        case 1: return { x: -x - y, y: (y - x) / 2 - z };
+        case 2: return { x: x - y, y: (-x - y) / 2 - z };
+        default: return { x: x + y, y: (x - y) / 2 - z };
+    }
+}
+
+// The tool reports the tile corner, so the exact spot is the point of the tile, at its ground height, drawn closest to the tap.
+function exactMapCoords(e) {
+    var v = ui.mainViewport, tx = Math.floor(e.mapCoords.x / 32) * 32, ty = Math.floor(e.mapCoords.y / 32) * 32;
+    if (!e.screenCoords || !v || v.left === undefined) return e.mapCoords;
+    var f = Math.pow(2, v.zoom), aimX = v.left + e.screenCoords.x * f, aimY = v.top + e.screenCoords.y * f;
+    var best = { x: tx + 16, y: ty + 16 }, bestDistance = Infinity;
+    for (var x = tx; x < tx + 32; x += 2) {
+        for (var y = ty; y < ty + 32; y += 2) {
+            var p = viewOf(x + 1, y + 1, groundAt(x + 1, y + 1), v.rotation);
+            var distance = Math.pow(p.x - aimX, 2) + Math.pow(p.y - aimY, 2);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = { x: x + 1, y: y + 1 };
+            }
+        }
+    }
+    return best;
 }
 
 // Quarter of the tile under the tap, numbered as the game numbers small scenery quadrants.
@@ -117,7 +183,7 @@ function findSceneryElement(item, ghost) {
         var e = elements[i];
         if (e.type !== ELEMENT_TYPES[item.kind] || e.object !== item.object || e.isGhost !== ghost) continue;
         if (item.kind === "large" && e.sequence !== 0) continue;
-        if (item.kind === "small" && !isFullTile(item) && e.quadrant !== item.quadrant) continue;
+        if (item.kind === "small" && !isFullTile(item) && !ignoresQuadrant(item) && e.quadrant !== item.quadrant) continue;
         if (item.z === undefined || Math.abs(e.baseZ - item.z) < (best ? Math.abs(best.baseZ - item.z) : Infinity)) best = e;
     }
     return best ? { z: best.baseZ, quadrant: item.kind === "small" ? best.quadrant : 0, direction: best.direction } : null;

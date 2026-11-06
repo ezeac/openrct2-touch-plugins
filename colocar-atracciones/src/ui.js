@@ -89,9 +89,13 @@ function refresh() {
     setWidget("status", { text: state.message || texts[state.phase] });
     setWidget("height", { text: marked ? "{BLACK}" + (state.offset >= 0 ? "+" : "") + state.offset : "{BLACK}-" });
     setWidget("cost", { text: marked && state.cost !== null ? t("cost", money(state.cost)) : t("costNone") });
-    setWidget("lower", { isDisabled: !marked || state.busy });
-    setWidget("raise", { isDisabled: !marked || state.busy });
-    setWidget("rotate", { isDisabled: !marked || state.busy });
+    var scenery = isScenery() && state.item;
+    var limited = function (delta) {
+        return scenery && !isHeightAllowed(state.ground, state.offset + delta);
+    };
+    setWidget("lower", { isDisabled: !marked || state.busy || limited(-1) });
+    setWidget("raise", { isDisabled: !marked || state.busy || limited(1) });
+    setWidget("rotate", { isDisabled: !marked || state.busy || (scenery && !canRotate(state.item)) });
     var ghost = isScenery() ? state.sceneryGhost : state.ghost;
     var canPlace = (marked && !state.error && ghost !== null) || (placingEntrance && state.entrance !== null);
     setWidget("place", { isDisabled: !canPlace || state.busy });
@@ -181,10 +185,16 @@ function isRideConstructionOpen() {
 }
 
 function updateSceneryGhost() {
+    var item = state.item;
+    if (!isHeightAllowed(state.ground, state.offset)) state.offset = 0;
     state.busy = true;
     refresh();
     clearGhosts(safely(function () {
-        var item = state.item, z = currentZ();
+        if (state.item !== item) {
+            state.busy = false;
+            return;
+        }
+        var z = currentZ();
         var result = querySceneryPlace(item, z);
         state.error = result && result.error ? errorText(result) : null;
         state.cost = result && !result.error ? result.cost : null;
@@ -245,13 +255,17 @@ function isSceneryWindowOpen() {
 
 // Small and large scenery chosen in the game's menu. Walls are left alone, so dragging a fence still works.
 function isNativeScenery(e) {
-    return SCENERY_ACTIONS[e.action] && sceneryEnabled() && !ownQuery && !isOwnPlacement(e.action, e.args) && isSceneryWindowOpen();
+    if (!SCENERY_ACTIONS[e.action] || !sceneryEnabled() || ownQuery || isOwnPlacement(e.action, e.args)) return false;
+    if (network.mode !== "none" && e.player !== network.currentPlayer.id) return false;
+    if (state.phase === "entrance" || state.phase === "exit") return false;
+    return isSceneryWindowOpen() && (!ui.tool || ui.tool.id === "");
 }
 
 // The game only reports placements that succeed, so a refused tap never reaches the plugin.
+// One tap can place several items when the game scatters them, and all of them are undone.
 function captureScenery(e, placed) {
     if (pendingScenery) {
-        if (placed && !pendingScenery.placed) pendingScenery.placed = { args: e.args, result: e.result };
+        if (placed) pendingScenery.placed.push({ args: e.args, result: e.result });
         return;
     }
     pendingScenery = {
@@ -260,18 +274,30 @@ function captureScenery(e, placed) {
             object: e.args.object, quadrant: e.args.quadrant || 0,
             colours: [e.args.primaryColour, e.args.secondaryColour, e.args.tertiaryColour]
         },
-        placed: placed ? { args: e.args, result: e.result } : null
+        placed: placed ? [{ args: e.args, result: e.result }] : []
     };
     context.setTimeout(safely(takeOverScenery), 0);
 }
 
 // A tap that got through is undone at no cost, so the player can still adjust the item before it counts.
+// If the game refuses to remove it, it stays as the game built it and is not refunded.
 function undoNativeScenery(item, placed, done) {
     var at = copyItem(item, { x: placed.args.x / 32, y: placed.args.y / 32, quadrant: placed.args.quadrant || 0 });
     var found = findSceneryElement(sceneryAt(at, placed.result, placed.args.z), false);
-    if (!found) return done();
+    if (!found) return done(false);
     removeScenery(copyItem(at, { quadrant: found.quadrant }), found.z, 0, function (r) {
-        refund((placed.result.cost || 0) + (r.error ? 0 : r.cost || 0), done);
+        if (r.error) return done(false);
+        refund((placed.result.cost || 0) + (r.cost || 0), function () {
+            done(true);
+        });
+    });
+}
+
+function undoAllNative(item, placedList, done, kept) {
+    kept = kept || 0;
+    if (placedList.length === 0) return done(kept);
+    undoNativeScenery(item, placedList[0], function (undone) {
+        undoAllNative(item, placedList.slice(1), done, kept + (undone ? 0 : 1));
     });
 }
 
@@ -282,7 +308,7 @@ function takeOverScenery() {
     cancelOwnTool();
     clearGhosts();
     state.busy = true;
-    var start = safely(function () {
+    var start = safely(function (kept) {
         if (previousRide >= 0) demolishRide(previousRide);
         cancelNativeTool();
         state.busy = false;
@@ -292,19 +318,20 @@ function takeOverScenery() {
         state.offset = 0;
         state.error = null;
         openWindow();
-        if (captured.placed) {
-            markSceneryAt(captured.placed.args.x / 32, captured.placed.args.y / 32, captured.item.quadrant);
+        var first = captured.placed[0];
+        if (first && !kept) {
+            markSceneryAt(first.args.x / 32, first.args.y / 32, captured.item.quadrant);
         } else {
             state.phase = "pick";
-            state.message = "";
+            state.message = kept ? t("sceneryKept") : "";
             refresh();
         }
         pickLocation();
     });
-    if (captured.placed) {
-        undoNativeScenery(captured.item, captured.placed, start);
+    if (captured.placed.length > 0) {
+        undoAllNative(captured.item, captured.placed, start);
     } else {
-        start();
+        start(0);
     }
 }
 
@@ -447,6 +474,7 @@ function pickLocation() {
 
 function changeHeight(delta) {
     if (state.phase !== "marked" || state.busy) return;
+    if (isScenery() && !isHeightAllowed(state.ground, state.offset + delta)) return;
     state.offset += delta;
     updateGhost();
 }
@@ -454,6 +482,7 @@ function changeHeight(delta) {
 function rotateMark() {
     if (state.phase !== "marked" || state.busy) return;
     if (isScenery()) {
+        if (!canRotate(state.item)) return;
         state.item.direction = (state.item.direction + 1) % 4;
         state.ground = groundHeight(state.item);
         updateGhost();
@@ -498,6 +527,7 @@ function placeSceneryItem() {
     clearGhosts(safely(function () {
         placeScenery(item, z, 0, safely(function (r) {
             state.busy = false;
+            if (state.item !== item) return;
             if (r.error) {
                 ui.showError(t("sceneryFailed"), errorText(r));
                 updateGhost();
@@ -505,7 +535,7 @@ function placeSceneryItem() {
             }
             state.item = copyItem(item, {});
             state.phase = "pick";
-            state.message = t("sceneryPlaced", money(r.cost));
+            state.message = park.getFlag("noMoney") ? t("sceneryPlacedFree") : t("sceneryPlaced", money(r.cost));
             refresh();
         }));
     }));

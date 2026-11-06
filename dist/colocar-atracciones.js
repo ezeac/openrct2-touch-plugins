@@ -31,7 +31,9 @@ var TEXTS = {
         sceneryPick: "Tap where the scenery goes.",
         sceneryMarked: "Tap elsewhere to move it, or Place.",
         sceneryPlaced: "Placed for {0}. Tap for another one.",
-        sceneryFailed: "The scenery could not be placed"
+        sceneryPlacedFree: "Placed. Tap for another one.",
+        sceneryFailed: "The scenery could not be placed",
+        sceneryKept: "The game had already placed it. Tap for another."
     },
     es: {
         title: "Colocar atracciones",
@@ -63,7 +65,9 @@ var TEXTS = {
         sceneryPick: "Tocá dónde va el decorado.",
         sceneryMarked: "Tocá otro lugar para moverlo o Colocar.",
         sceneryPlaced: "Colocado por {0}. Tocá para otro.",
-        sceneryFailed: "No se pudo colocar el decorado"
+        sceneryPlacedFree: "Colocado. Tocá para otro.",
+        sceneryFailed: "No se pudo colocar el decorado",
+        sceneryKept: "El juego ya lo había colocado. Tocá para otro."
     }
 };
 var translations = null;
@@ -310,6 +314,12 @@ function placedTrackOf(rideId) {
 }
 var SCENERY_STEP = 8;
 var FULL_TILE_FLAG = 1;
+var ROTATABLE_FLAG = 1 << 3;
+var DIAGONAL_FLAG = 1 << 8;
+var HALF_TILE_FLAG = 1 << 24;
+var THREE_QUARTERS_FLAG = 1 << 25;
+var MIN_SCENERY_Z = 16;
+var MAX_SCENERY_Z = 1784;
 var SCENERY_WINDOW_CLASS = 18;
 var REFUND_ACTION = "colocaratracciones_refund";
 var SCENERY_ACTIONS = { smallsceneryplace: "small", largesceneryplace: "large" };
@@ -317,16 +327,19 @@ var ELEMENT_TYPES = { small: "small_scenery", large: "large_scenery" };
 
 // The game charges a removal price, so this gives back the difference to undo a placement for free.
 function registerRefundAction() {
-    context.registerAction(REFUND_ACTION, function () {
-        return {};
-    }, function (e) {
-        park.cash += e.args.amount;
-        return {};
+    var check = function (e) {
+        var amount = e.args.amount;
+        return typeof amount === "number" && isFinite(amount) && amount >= 0 ? {} : { error: 1, errorMessage: "Invalid amount" };
+    };
+    context.registerAction(REFUND_ACTION, check, function (e) {
+        var result = check(e);
+        if (!result.error) park.cash += e.args.amount;
+        return result;
     });
 }
 
 function refund(amount, done) {
-    if (amount <= 0) {
+    if (amount <= 0 || park.getFlag("noMoney")) {
         if (done) done();
         return;
     }
@@ -335,24 +348,81 @@ function refund(amount, done) {
     });
 }
 
-function isFullTile(item) {
-    if (item.kind !== "small") return true;
-    var object = objectManager.getObject("small_scenery", item.object);
-    return !object || (object.flags & FULL_TILE_FLAG) !== 0;
+function smallFlags(item) {
+    var object = item.kind === "small" ? objectManager.getObject("small_scenery", item.object) : null;
+    return object ? object.flags : FULL_TILE_FLAG;
 }
 
-// The tool reports the tile corner, so the exact spot is worked out from the screen, at the tile's ground height.
-function exactMapCoords(e) {
-    var v = ui.mainViewport, tile = { x: Math.floor(e.mapCoords.x / 32) * 32, y: Math.floor(e.mapCoords.y / 32) * 32 };
-    if (!e.screenCoords || !v || v.left === undefined) return e.mapCoords;
-    var surface = surfaceOf(tile.x / 32, tile.y / 32), z = surface ? surface.baseZ : 0, f = Math.pow(2, v.zoom);
-    var a = v.left + e.screenCoords.x * f, b = 2 * (v.top + e.screenCoords.y * f + z);
-    var inverse = [[(b - a) / 2, (b + a) / 2], [(-a - b) / 2, (b - a) / 2], [(a - b) / 2, (-a - b) / 2], [(a + b) / 2, (a - b) / 2]];
-    var p = inverse[v.rotation & 3];
-    return {
-        x: Math.min(tile.x + 31, Math.max(tile.x, Math.floor(p[0]))),
-        y: Math.min(tile.y + 31, Math.max(tile.y, Math.floor(p[1])))
+function isFullTile(item) {
+    return (smallFlags(item) & FULL_TILE_FLAG) !== 0;
+}
+
+// The game keeps quadrant 0 for these shapes, whatever corner was asked for.
+function ignoresQuadrant(item) {
+    var flags = smallFlags(item);
+    if (!(flags & FULL_TILE_FLAG) && (flags & DIAGONAL_FLAG)) return false;
+    return (flags & (DIAGONAL_FLAG | HALF_TILE_FLAG | THREE_QUARTERS_FLAG)) !== 0;
+}
+
+function canRotate(item) {
+    return item.kind !== "small" || (smallFlags(item) & ROTATABLE_FLAG) !== 0;
+}
+
+function isHeightAllowed(ground, offset) {
+    var z = ground + offset * SCENERY_STEP;
+    return offset === 0 || (z >= MIN_SCENERY_Z && z <= MAX_SCENERY_Z);
+}
+
+// Ground height at an exact point of a tile, following the game's own formula for sloped land and water.
+function groundAt(x, y) {
+    var surface = surfaceOf(Math.floor(x / 32), Math.floor(y / 32));
+    if (!surface) return 0;
+    var xl = x & 31, yl = y & 31, slope = surface.slope & 15, steep = surface.slope & 16, height = surface.baseZ;
+    var half = function (n) {
+        return n < 0 ? Math.ceil(n / 2) : Math.floor(n / 2);
     };
+    var corner = { 1: xl + yl - 32, 2: xl - yl, 4: 32 - yl - xl, 8: yl - xl }[slope];
+    if (corner !== undefined && corner > 0) height += half(corner);
+    var side = { 3: xl, 6: 32 - yl, 9: yl, 12: 32 - xl }[slope];
+    if (side !== undefined) height += half(side);
+    var down = { 7: [xl + 32 - yl, xl - yl], 11: [xl + yl, xl + yl - 32], 13: [32 - xl + yl, yl - xl], 14: [64 - xl - yl, 32 - yl - xl] }[slope];
+    if (down) {
+        if (steep) return Math.max(height + half(down[0]), surface.waterHeight);
+        height += 16;
+        if (down[1] < 0) height += half(down[1]);
+    }
+    var valley = { 10: Math.abs(xl - yl), 5: Math.abs(xl + yl - 32) }[slope];
+    if (valley !== undefined) height += half(valley);
+    return Math.max(height, surface.waterHeight);
+}
+
+// Screen position of a map point for each camera rotation, in view units.
+function viewOf(x, y, z, rotation) {
+    switch (rotation & 3) {
+        case 0: return { x: y - x, y: (x + y) / 2 - z };
+        case 1: return { x: -x - y, y: (y - x) / 2 - z };
+        case 2: return { x: x - y, y: (-x - y) / 2 - z };
+        default: return { x: x + y, y: (x - y) / 2 - z };
+    }
+}
+
+// The tool reports the tile corner, so the exact spot is the point of the tile, at its ground height, drawn closest to the tap.
+function exactMapCoords(e) {
+    var v = ui.mainViewport, tx = Math.floor(e.mapCoords.x / 32) * 32, ty = Math.floor(e.mapCoords.y / 32) * 32;
+    if (!e.screenCoords || !v || v.left === undefined) return e.mapCoords;
+    var f = Math.pow(2, v.zoom), aimX = v.left + e.screenCoords.x * f, aimY = v.top + e.screenCoords.y * f;
+    var best = { x: tx + 16, y: ty + 16 }, bestDistance = Infinity;
+    for (var x = tx; x < tx + 32; x += 2) {
+        for (var y = ty; y < ty + 32; y += 2) {
+            var p = viewOf(x + 1, y + 1, groundAt(x + 1, y + 1), v.rotation);
+            var distance = Math.pow(p.x - aimX, 2) + Math.pow(p.y - aimY, 2);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = { x: x + 1, y: y + 1 };
+            }
+        }
+    }
+    return best;
 }
 
 // Quarter of the tile under the tap, numbered as the game numbers small scenery quadrants.
@@ -427,7 +497,7 @@ function findSceneryElement(item, ghost) {
         var e = elements[i];
         if (e.type !== ELEMENT_TYPES[item.kind] || e.object !== item.object || e.isGhost !== ghost) continue;
         if (item.kind === "large" && e.sequence !== 0) continue;
-        if (item.kind === "small" && !isFullTile(item) && e.quadrant !== item.quadrant) continue;
+        if (item.kind === "small" && !isFullTile(item) && !ignoresQuadrant(item) && e.quadrant !== item.quadrant) continue;
         if (item.z === undefined || Math.abs(e.baseZ - item.z) < (best ? Math.abs(best.baseZ - item.z) : Infinity)) best = e;
     }
     return best ? { z: best.baseZ, quadrant: item.kind === "small" ? best.quadrant : 0, direction: best.direction } : null;
@@ -548,9 +618,13 @@ function refresh() {
     setWidget("status", { text: state.message || texts[state.phase] });
     setWidget("height", { text: marked ? "{BLACK}" + (state.offset >= 0 ? "+" : "") + state.offset : "{BLACK}-" });
     setWidget("cost", { text: marked && state.cost !== null ? t("cost", money(state.cost)) : t("costNone") });
-    setWidget("lower", { isDisabled: !marked || state.busy });
-    setWidget("raise", { isDisabled: !marked || state.busy });
-    setWidget("rotate", { isDisabled: !marked || state.busy });
+    var scenery = isScenery() && state.item;
+    var limited = function (delta) {
+        return scenery && !isHeightAllowed(state.ground, state.offset + delta);
+    };
+    setWidget("lower", { isDisabled: !marked || state.busy || limited(-1) });
+    setWidget("raise", { isDisabled: !marked || state.busy || limited(1) });
+    setWidget("rotate", { isDisabled: !marked || state.busy || (scenery && !canRotate(state.item)) });
     var ghost = isScenery() ? state.sceneryGhost : state.ghost;
     var canPlace = (marked && !state.error && ghost !== null) || (placingEntrance && state.entrance !== null);
     setWidget("place", { isDisabled: !canPlace || state.busy });
@@ -640,10 +714,16 @@ function isRideConstructionOpen() {
 }
 
 function updateSceneryGhost() {
+    var item = state.item;
+    if (!isHeightAllowed(state.ground, state.offset)) state.offset = 0;
     state.busy = true;
     refresh();
     clearGhosts(safely(function () {
-        var item = state.item, z = currentZ();
+        if (state.item !== item) {
+            state.busy = false;
+            return;
+        }
+        var z = currentZ();
         var result = querySceneryPlace(item, z);
         state.error = result && result.error ? errorText(result) : null;
         state.cost = result && !result.error ? result.cost : null;
@@ -704,13 +784,17 @@ function isSceneryWindowOpen() {
 
 // Small and large scenery chosen in the game's menu. Walls are left alone, so dragging a fence still works.
 function isNativeScenery(e) {
-    return SCENERY_ACTIONS[e.action] && sceneryEnabled() && !ownQuery && !isOwnPlacement(e.action, e.args) && isSceneryWindowOpen();
+    if (!SCENERY_ACTIONS[e.action] || !sceneryEnabled() || ownQuery || isOwnPlacement(e.action, e.args)) return false;
+    if (network.mode !== "none" && e.player !== network.currentPlayer.id) return false;
+    if (state.phase === "entrance" || state.phase === "exit") return false;
+    return isSceneryWindowOpen() && (!ui.tool || ui.tool.id === "");
 }
 
 // The game only reports placements that succeed, so a refused tap never reaches the plugin.
+// One tap can place several items when the game scatters them, and all of them are undone.
 function captureScenery(e, placed) {
     if (pendingScenery) {
-        if (placed && !pendingScenery.placed) pendingScenery.placed = { args: e.args, result: e.result };
+        if (placed) pendingScenery.placed.push({ args: e.args, result: e.result });
         return;
     }
     pendingScenery = {
@@ -719,18 +803,30 @@ function captureScenery(e, placed) {
             object: e.args.object, quadrant: e.args.quadrant || 0,
             colours: [e.args.primaryColour, e.args.secondaryColour, e.args.tertiaryColour]
         },
-        placed: placed ? { args: e.args, result: e.result } : null
+        placed: placed ? [{ args: e.args, result: e.result }] : []
     };
     context.setTimeout(safely(takeOverScenery), 0);
 }
 
 // A tap that got through is undone at no cost, so the player can still adjust the item before it counts.
+// If the game refuses to remove it, it stays as the game built it and is not refunded.
 function undoNativeScenery(item, placed, done) {
     var at = copyItem(item, { x: placed.args.x / 32, y: placed.args.y / 32, quadrant: placed.args.quadrant || 0 });
     var found = findSceneryElement(sceneryAt(at, placed.result, placed.args.z), false);
-    if (!found) return done();
+    if (!found) return done(false);
     removeScenery(copyItem(at, { quadrant: found.quadrant }), found.z, 0, function (r) {
-        refund((placed.result.cost || 0) + (r.error ? 0 : r.cost || 0), done);
+        if (r.error) return done(false);
+        refund((placed.result.cost || 0) + (r.cost || 0), function () {
+            done(true);
+        });
+    });
+}
+
+function undoAllNative(item, placedList, done, kept) {
+    kept = kept || 0;
+    if (placedList.length === 0) return done(kept);
+    undoNativeScenery(item, placedList[0], function (undone) {
+        undoAllNative(item, placedList.slice(1), done, kept + (undone ? 0 : 1));
     });
 }
 
@@ -741,7 +837,7 @@ function takeOverScenery() {
     cancelOwnTool();
     clearGhosts();
     state.busy = true;
-    var start = safely(function () {
+    var start = safely(function (kept) {
         if (previousRide >= 0) demolishRide(previousRide);
         cancelNativeTool();
         state.busy = false;
@@ -751,19 +847,20 @@ function takeOverScenery() {
         state.offset = 0;
         state.error = null;
         openWindow();
-        if (captured.placed) {
-            markSceneryAt(captured.placed.args.x / 32, captured.placed.args.y / 32, captured.item.quadrant);
+        var first = captured.placed[0];
+        if (first && !kept) {
+            markSceneryAt(first.args.x / 32, first.args.y / 32, captured.item.quadrant);
         } else {
             state.phase = "pick";
-            state.message = "";
+            state.message = kept ? t("sceneryKept") : "";
             refresh();
         }
         pickLocation();
     });
-    if (captured.placed) {
-        undoNativeScenery(captured.item, captured.placed, start);
+    if (captured.placed.length > 0) {
+        undoAllNative(captured.item, captured.placed, start);
     } else {
-        start();
+        start(0);
     }
 }
 
@@ -906,6 +1003,7 @@ function pickLocation() {
 
 function changeHeight(delta) {
     if (state.phase !== "marked" || state.busy) return;
+    if (isScenery() && !isHeightAllowed(state.ground, state.offset + delta)) return;
     state.offset += delta;
     updateGhost();
 }
@@ -913,6 +1011,7 @@ function changeHeight(delta) {
 function rotateMark() {
     if (state.phase !== "marked" || state.busy) return;
     if (isScenery()) {
+        if (!canRotate(state.item)) return;
         state.item.direction = (state.item.direction + 1) % 4;
         state.ground = groundHeight(state.item);
         updateGhost();
@@ -957,6 +1056,7 @@ function placeSceneryItem() {
     clearGhosts(safely(function () {
         placeScenery(item, z, 0, safely(function (r) {
             state.busy = false;
+            if (state.item !== item) return;
             if (r.error) {
                 ui.showError(t("sceneryFailed"), errorText(r));
                 updateGhost();
@@ -964,7 +1064,7 @@ function placeSceneryItem() {
             }
             state.item = copyItem(item, {});
             state.phase = "pick";
-            state.message = t("sceneryPlaced", money(r.cost));
+            state.message = park.getFlag("noMoney") ? t("sceneryPlacedFree") : t("sceneryPlaced", money(r.cost));
             refresh();
         }));
     }));
@@ -1099,6 +1199,8 @@ registerPlugin({
         context.subscribe("action.execute", onActionExecute);
         context.subscribe("map.changed", function () {
             state.ghost = state.entranceGhost = state.sceneryGhost = null;
+            state.mark = null;
+            state.item = null;
             ui.closeWindows(WINDOW_CLASS);
         });
     }

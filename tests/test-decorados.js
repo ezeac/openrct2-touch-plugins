@@ -4,7 +4,7 @@ var SCENERY_WINDOW = { classification: 18 };
 function openNativeScenery() {
     fakeNative = [SCENERY_WINDOW];
     ui.windows = 1;
-    ui.tool = { id: "scenery", cancel: function () { fakeNative = []; ui.windows = 0; ui.tool = null; } };
+    ui.tool = { id: "", cancel: function () { fakeNative = []; ui.windows = 0; ui.tool = null; } };
 }
 
 function nativePlace(action, args, done) {
@@ -14,7 +14,7 @@ function nativePlace(action, args, done) {
 
 // Como el juego: la posición del mapa viene redondeada a la baldosa y el punto exacto sólo está en la pantalla.
 function tap(x, y) {
-    var v = ui.mainViewport, z = surfaceOf(Math.floor(x / 32), Math.floor(y / 32)).baseZ;
+    var v = ui.mainViewport, z = groundAt(x, y);
     var screen = [[y - x, (x + y) / 2 - z], [-x - y, (y - x) / 2 - z], [x - y, (-x - y) / 2 - z], [x + y, (x - y) / 2 - z]][v.rotation];
     fakeTool.onDown({
         isDown: true, screenCoords: { x: screen[0] - v.left, y: screen[1] - v.top },
@@ -35,6 +35,18 @@ function freeSpots(object, count) {
         if (r && !r.error) spots.push({ x: x, y: y, z: surface.baseZ });
     }
     return spots;
+}
+
+function slopedTiles(count) {
+    var tiles = {}, list = [];
+    for (var x = 2; x < map.size.x - 2 && list.length < count; x++) for (var y = 2; y < map.size.y - 2 && list.length < count; y++) {
+        var surface = surfaceOf(x, y);
+        if (surface && surface.slope && !tiles[surface.slope]) {
+            tiles[surface.slope] = true;
+            list.push({ x: x, y: y, slope: surface.slope });
+        }
+    }
+    return list;
 }
 
 function idle(then) {
@@ -125,6 +137,19 @@ runTests("test-decorados", function (done) {
                 }
                 ui.mainViewport.rotation = 0;
                 check(misses.length === 0, "cada esquina en las cuatro rotaciones: " + misses.join(", "));
+                var slopeMisses = [], slopes = slopedTiles(30);
+                slopes.forEach(function (t) {
+                    for (var r = 0; r < 4; r++) {
+                        ui.mainViewport.rotation = r;
+                        corners.forEach(function (c) {
+                            tap(t.x * 32 + c[0], t.y * 32 + c[1]);
+                            // Una pendiente empinada vista de canto tapa parte de la baldosa: ahí el punto es ambiguo también para el juego.
+                            if (state.item.quadrant !== c[2] && !(t.slope & 16)) slopeMisses.push(t.x + "," + t.y + " pendiente " + t.slope + " rot " + r);
+                        });
+                    }
+                });
+                ui.mainViewport.rotation = 0;
+                check(slopes.length >= 10 && slopeMisses.length === 0, "esquinas en " + slopes.length + " baldosas en pendiente");
                 tap(q.x * 32 + 26, q.y * 32 + 26);
                 idle(function () {
                     check(state.item.quadrant === 2, "el toque elige el cuarto");
