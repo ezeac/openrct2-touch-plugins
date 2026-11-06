@@ -49,44 +49,48 @@ runTests("test-mas-decorados", function (done) {
     var studyBefore = researchState();
     log("investigación al empezar: " + JSON.stringify(studyBefore));
     check(studyBefore.stage === "designing" && studyBefore.item !== "null", "parque3 tiene algo en investigación");
-    openWindow();
-    var keys = state.themes.filter(function (th) { return !th.loose; }).map(function (th) { return sortKey(th.name); });
-    check(keys.every(function (k, i) { return i === 0 || keys[i - 1] <= k; }), "lista ordenada sin importar mayúsculas ni acentos");
-    check(THEME_TABLE["rct2dlc.scenery_group.scgpanda"] !== undefined, "la tabla incluye los temas empaquetados en .parkobj");
-    log("temas en la lista: " + state.themes.length + " | " + state.themes.slice(0, 4).map(function (th) { return th.name + " = " + statusText(th); }).join(" ; "));
-    check(state.themes.length > 0, "lista temas");
-    check(text(W, "action") === t("add") && fakeWindows[W].findWidget("action").isDisabled, "sin selección el botón está apagado");
+    // La ventana lee primero los temas que no trae el juego.
+    learnThemes(function () {
+        openWindow();
+        var keys = state.themes.filter(function (th) { return !th.loose; }).map(function (th) { return sortKey(th.name); });
+        check(keys.every(function (k, i) { return i === 0 || keys[i - 1] <= k; }), "lista ordenada sin importar mayúsculas ni acentos");
+        check(THEME_TABLE["rct2dlc.scenery_group.scgpanda"] !== undefined, "la tabla incluye los temas empaquetados en .parkobj");
+        log("temas en la lista: " + state.themes.length + " | " + state.themes.slice(0, 4).map(function (th) { return th.name + " = " + statusText(th); }).join(" ; "));
+        check(state.themes.length > 0, "lista temas");
+        check(text(W, "action") === t("add") && fakeWindows[W].findWidget("action").isDisabled, "sin selección el botón está apagado");
 
-    var classic = loadedGroup("rct2.scenery_group.scgclass");
-    check(classic && isUninvented(classic.index), "parque3 tiene la temática romana sin investigar");
-    pickAndRun("rct2.scenery_group.scgclass", function (label) {
-        check(label === t("complete"), "un tema cargado se completa: " + label);
-        check(park.research.isObjectResearched("scenery_group", classic.index) && !isUninvented(classic.index), "queda investigado y fuera de la cola");
-        check(themeRow("rct2.scenery_group.scgclass") < 0, "sale de la lista");
-        log("mensaje: " + text(W, "message") + " | " + text(W, "detail"));
-
-        pickAndRun("rct2.scenery_group.scgabstr", function (label2) {
-            var abstract = loadedGroup("rct2.scenery_group.scgabstr");
+        var classic = loadedGroup("rct2.scenery_group.scgclass");
+        check(classic && isUninvented(classic.index), "parque3 tiene la temática romana sin investigar");
+        pickAndRun("rct2.scenery_group.scgclass", function (label) {
+            check(label === t("complete"), "un tema cargado se completa: " + label);
+            check(park.research.isObjectResearched("scenery_group", classic.index) && !isUninvented(classic.index), "queda investigado y fuera de la cola");
+            check(themeRow("rct2.scenery_group.scgclass") < 0, "sale de la lista");
             log("mensaje: " + text(W, "message") + " | " + text(W, "detail"));
-            check(label2 === t("add") && abstract !== null, "agrega un tema nuevo");
-            check(abstract && park.research.isObjectResearched("scenery_group", abstract.index), "el tema nuevo queda investigado");
-            check(text(W, "detail") === counted("added", THEME_TABLE["rct2.scenery_group.scgabstr"][0]), "informa la cantidad de la tabla: " + text(W, "detail"));
-            check(canPlace("rct2.scenery_small.tge1"), "un decorado del tema nuevo se puede colocar");
-            var studyAfter = researchState();
-            check(studyAfter.stage === studyBefore.stage && studyAfter.item === studyBefore.item && studyAfter.progress >= studyBefore.progress,
-                "cargar objetos no reinicia la investigación: " + JSON.stringify(studyAfter));
 
-            // Tema a medias: el grupo cargado sin sus objetos.
-            var west = objectManager.load("rct2.scenery_group.scgwwest");
-            reload();
-            var row = themeRow("rct2.scenery_group.scgwwest");
-            check(row >= 0 && state.themes[row].status === "partial" && state.themes[row].missing === THEME_TABLE["rct2.scenery_group.scgwwest"][0], "detecta el tema a medias con lo que falta: " + (row >= 0 && statusText(state.themes[row])));
-            pickAndRun("rct2.scenery_group.scgwwest", function () {
-                var missing = missingItems(loadedGroup("rct2.scenery_group.scgwwest"), loadedIdentifiers(), identifierSet(objectManager.installedObjects));
-                check(missing.length === 0, "completar carga todo lo que faltaba");
-                expansionCase();
+            pickAndRun("rct2.scenery_group.scgabstr", function (label2) {
+                var abstract = loadedGroup("rct2.scenery_group.scgabstr");
+                log("mensaje: " + text(W, "message") + " | " + text(W, "detail"));
+                check(label2 === t("add") && abstract !== null, "agrega un tema nuevo");
+                check(abstract && park.research.isObjectResearched("scenery_group", abstract.index), "el tema nuevo queda investigado");
+                check(text(W, "detail") === counted("added", THEME_TABLE["rct2.scenery_group.scgabstr"][0]), "informa la cantidad de la tabla: " + text(W, "detail"));
+                check(canPlace("rct2.scenery_small.tge1"), "un decorado del tema nuevo se puede colocar");
+                var studyAfter = researchState();
+                check(studyAfter.stage === studyBefore.stage && studyAfter.item === studyBefore.item && studyAfter.progress >= studyBefore.progress,
+                    "cargar objetos no reinicia la investigación: " + JSON.stringify(studyAfter));
+
+                // Tema a medias: el grupo cargado sin sus objetos.
+                var west = objectManager.load("rct2.scenery_group.scgwwest");
+                reload();
+                var row = themeRow("rct2.scenery_group.scgwwest");
+                check(row >= 0 && state.themes[row].status === "partial" && state.themes[row].missing === THEME_TABLE["rct2.scenery_group.scgwwest"][0], "detecta el tema a medias con lo que falta: " + (row >= 0 && statusText(state.themes[row])));
+                pickAndRun("rct2.scenery_group.scgwwest", function () {
+                    var missing = missingItems(loadedGroup("rct2.scenery_group.scgwwest"), loadedIdentifiers(), identifierSet(objectManager.installedObjects));
+                    check(missing.length === 0, "completar carga todo lo que faltaba");
+                    expansionCase();
+                });
             });
         });
+
     });
 
     function expansionCase() {
@@ -134,7 +138,23 @@ runTests("test-mas-decorados", function (done) {
 
     // Objetos sueltos instalados por tests/objetos-prueba.py: dos autores, uno sin autor, más los del juego.
     function looseCase() {
-        reload();
+        var inventedBefore = park.research.inventedItems.length, studyBefore = researchState();
+        fakeWindows[W].close();
+        themeItems = {};
+        openWindow();
+        check(state.busy && fakeWindows[W].findWidget("action").isDisabled, "mientras lee los temas el botón está apagado");
+        waitFor(function () { return !state.busy; }, function () {
+            var theme = state.themes.filter(function (th) { return th.identifier === "prueba.scenery_group.tema"; })[0];
+            check(theme && theme.status === "new" && theme.count === 2, "el tema propio muestra su cantidad: " + (theme && statusText(theme)));
+            check(!state.themes.some(function (th) { return th.identifier === LOOSE_PREFIX + "Autor C"; }), "sus objetos no salen como sueltos");
+            check(objectManager.getAllObjects("scenery_group").every(function (g) { return g.identifier !== "prueba.scenery_group.tema"; }), "el tema leído no queda cargado");
+            var after = researchState();
+            check(park.research.inventedItems.length === inventedBefore && after.stage === studyBefore.stage && after.item === studyBefore.item, "la investigación queda igual y sin restos: " + park.research.inventedItems.length + " vs " + inventedBefore);
+            looseRowsCase();
+        });
+    }
+
+    function looseRowsCase() {
         var rows = state.themes.filter(function (th) { return th.loose; });
         log("filas sueltas: " + rows.map(function (r) { return themeName(r) + " = " + statusText(r); }).join(" ; "));
         var byKey = function (key) { return state.themes.filter(function (th) { return th.identifier === key; })[0]; };

@@ -12,7 +12,8 @@ var RESEARCH_STAGES = ["initial_research", "designing", "completing_design", "un
 function registerResearchAction() {
     var check = function (e) {
         var args = e.args, valid = typeof args.object === "number"
-            && (args.stage === undefined || RESEARCH_STAGES.indexOf(args.stage) >= 0 && typeof args.progress === "number" && args.progress >= 0);
+            && (args.stage === undefined || RESEARCH_STAGES.indexOf(args.stage) >= 0 && typeof args.progress === "number" && args.progress >= 0)
+            && (args.clean === undefined || typeof args.clean === "boolean");
         return valid ? {} : { error: 1, errorMessage: "Invalid arguments" };
     };
     context.registerAction(RESEARCH_ACTION, check, function (e) {
@@ -23,6 +24,8 @@ function registerResearchAction() {
             park.research.stage = e.args.stage;
             park.research.progress = e.args.progress;
         }
+        // Setting the list makes the game drop the entries of themes that were unloaded.
+        if (e.args.clean) park.research.inventedItems = park.research.inventedItems;
         if (e.args.object >= 0) inventTheme(e.args.object);
         return {};
     });
@@ -66,6 +69,24 @@ function isScenery(identifier) {
     return type !== undefined && type !== COSTUMES;
 }
 
+var datNames = null;
+
+// Themes often name their old .DAT items without the checksum, so those are matched to the installed ones by name.
+function canonical(identifier) {
+    if (identifier.indexOf("|") < 0) return identifier;
+    if (!datNames) {
+        datNames = {};
+        objectManager.installedObjects.forEach(function (o) {
+            if (o.identifier.indexOf("|") >= 0) datNames[o.identifier.substr(9, 8)] = o.identifier;
+        });
+    }
+    return datNames[identifier.substr(9, 8)] || identifier;
+}
+
+function itemsOf(group) {
+    return group.items.map(canonical);
+}
+
 function identifierSet(objects) {
     var set = {};
     objects.forEach(function (o) {
@@ -93,7 +114,7 @@ function expansionOf(installed) {
 
 // Items of a loaded theme that are installed but not in the park yet.
 function missingItems(group, loaded, installedIds) {
-    return group.items.filter(function (id) {
+    return itemsOf(group).filter(function (id) {
         return !loaded[id] && installedIds[id] && typeOf(id);
     });
 }
@@ -115,9 +136,16 @@ function listThemes() {
         var theme = { identifier: o.identifier, name: o.name, expansion: expansionOf(o), count: table ? table[0] : null };
         if (!group) {
             theme.status = "new";
+            var items = themeItems[o.identifier];
+            if (items) {
+                theme.count = items.filter(function (id) {
+                    return isScenery(id) && installedIds[id];
+                }).length;
+                if (theme.count === 0) return;
+            }
         } else {
             // A theme without scenery never counts as researched for the game, so it would stay in the list for good.
-            var scenery = group.items.filter(function (id) {
+            var scenery = itemsOf(group).filter(function (id) {
                 return isScenery(id) && (loaded[id] || installedIds[id]);
             });
             if (scenery.length === 0) return;

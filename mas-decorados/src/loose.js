@@ -15,14 +15,43 @@ function isStock(o) {
     return !custom || STOCK_CUSTOM_PREFIXES.indexOf(prefix) >= 0;
 }
 
+// What each theme the game does not bring contains, read once per session: the game only tells it for loaded themes.
+var themeItems = {};
+
+function unknownThemes() {
+    var loaded = identifierSet(objectManager.getAllObjects("scenery_group"));
+    return objectManager.installedObjects.filter(function (o) {
+        return o.type === "scenery_group" && !THEME_TABLE[o.identifier] && !loaded[o.identifier] && !themeItems[o.identifier];
+    });
+}
+
+// Loads each theme alone, notes its items and unloads it, then puts research back and drops the unloaded themes from it.
+function learnThemes(done) {
+    var unknown = unknownThemes();
+    if (unknown.length === 0) return done();
+    var research = park.research, restore = { stage: research.stage, progress: research.progress };
+    unknown.forEach(function (o) {
+        var group = objectManager.load(o.identifier);
+        themeItems[o.identifier] = group ? itemsOf(group) : [];
+        if (group) objectManager.unload(o.identifier);
+    });
+    context.executeAction(RESEARCH_ACTION, { object: -1, stage: restore.stage, progress: restore.progress, clean: true }, function () {
+        done();
+    });
+}
+
 // Installed scenery that no theme brings, grouped by its author so a big pack can be added in parts.
 function looseRows(loaded) {
     var inThemes = {};
-    objectManager.getAllObjects("scenery_group").forEach(function (group) {
-        group.items.forEach(function (id) {
+    var mark = function (items) {
+        items.forEach(function (id) {
             inThemes[id] = true;
         });
+    };
+    objectManager.getAllObjects("scenery_group").forEach(function (group) {
+        mark(itemsOf(group));
     });
+    for (var theme in themeItems) mark(themeItems[theme]);
     var rows = {};
     objectManager.installedObjects.forEach(function (o) {
         if (!LOOSE_LIMITS[o.type] || loaded[o.identifier] || inThemes[o.identifier] || skippedLoose[o.identifier] || isStock(o)) return;

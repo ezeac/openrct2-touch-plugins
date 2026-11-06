@@ -123,8 +123,8 @@ function openWindow() {
         reload();
         return;
     }
-    // A pending answer could have been lost with the previous window.
-    state.busy = false;
+    // A pending answer could have been lost with the previous window; the list waits until the themes are read.
+    state.busy = true;
     var y = 18;
     ui.openWindow({
         classification: WINDOW_CLASS,
@@ -151,4 +151,8 @@ function openWindow() {
         ]
     });
     reload();
+    learnThemes(safely(function () {
+        state.busy = false;
+        reload();
+    }));
 }
