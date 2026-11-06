@@ -1,6 +1,6 @@
 # OpenRCT2 touch plugins
 
-Two plugins that make building in OpenRCT2 easier on a phone or tablet. Tested on OpenRCT2 0.5.6 for Android. The texts follow the game's language (English and Spanish for now).
+Plugins that make building in OpenRCT2 easier on a phone or tablet. Tested on OpenRCT2 0.5.6 for Android. The texts follow the game's language (English and Spanish for now).
 
 *Español más abajo.*
 
@@ -24,12 +24,21 @@ On a touch screen the game places a flat ride or stall on the first tap. With th
 - **Walls are left alone** (fences, hedges), so dragging along a path still places a whole row at once.
 - Untick "Ask for confirmation when placing" to go back to the game's normal behaviour for rides, and "Also for scenery" for scenery.
 
+## More scenery (`mas-decorados.js`)
+
+Most parks load only some of the scenery themes the game has installed. This plugin lists the themes the park lacks or has only in part, and adds them while you play.
+
+- **Add:** loads a whole theme (Wild West, Space, Egyptian…) and makes it available, as if it had been researched. It shows up as a new tab the next time the scenery menu opens.
+- **Complete:** loads what a theme is missing, or makes available a theme the scenario still keeps for research.
+- Themes from Wacky Worlds and Time Twister need those expansions' files. If the game does not have them, the plugin says so and adds nothing.
+- Themes are never removed, so scenery already placed is safe. Adding a theme skips the scenario's research for it.
+
 ## Install
 
 Copy the `.js` files from `dist/` into the game's `plugin` folder. On Android it is the `openrct2-user/plugin` folder in the phone's storage.
 
 ```bash
-adb push dist/conectar-caminos.js dist/colocar-atracciones.js /sdcard/openrct2-user/plugin/
+adb push dist/conectar-caminos.js dist/colocar-atracciones.js dist/mas-decorados.js /sdcard/openrct2-user/plugin/
 ```
 
 ## Develop
@@ -40,11 +49,12 @@ adb push dist/conectar-caminos.js dist/colocar-atracciones.js /sdcard/openrct2-u
 
 ## Español
 
-Dos plugins para construir más cómodo en OpenRCT2 desde el celular o la tablet. Probados en OpenRCT2 0.5.6 para Android. Los textos siguen el idioma del juego.
+Plugins para construir más cómodo en OpenRCT2 desde el celular o la tablet. Probados en OpenRCT2 0.5.6 para Android. Los textos siguen el idioma del juego.
 
 - **Conectar caminos:** tocás dos caminos y arma el trazado más corto, con vista previa, "+" y "−" para alargarlo en zigzag, "Construir" y "Deshacer".
 - **Colocar atracciones:** al elegir una atracción fija o un puesto, cada toque la mueve y recién se construye con "Colocar". Permite subirla del suelo y marcar la entrada y la salida igual.
 - **Decorados:** con los decorados simples y grandes pasa lo mismo, con "+" y "−" de a medio escalón y "Rotar". En los de cuarto de casilla, el toque elige la esquina. Los muros (vallas, setos) no se tocan, así que se siguen colocando de a varios arrastrando.
+- **Más decorados:** lista los temas de decorados instalados que el parque no tiene o tiene a medias, y los agrega o completa en plena partida, sin esperar la investigación. Los de las expansiones avisan si faltan sus archivos.
 
 Para instalarlos, copiá los `.js` de `dist/` a la carpeta `openrct2-user/plugin` del celular.
 

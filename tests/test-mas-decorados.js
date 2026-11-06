@@ -1,0 +1,88 @@
+// Agrega, completa e investiga temas de decorados en parque3 con la ventana simulada.
+var W = WINDOW_CLASS;
+
+function themeRow(identifier) {
+    for (var i = 0; i < state.themes.length; i++) if (state.themes[i].identifier === identifier) return i;
+    return -1;
+}
+
+function pickAndRun(identifier, then) {
+    var row = themeRow(identifier);
+    check(row >= 0, "el tema " + identifier + " está en la lista");
+    if (row < 0) return then();
+    fakeWindows[W].findWidget("list").onClick(row, 0);
+    var label = text(W, "action");
+    click(W, "action");
+    waitFor(function () { return !state.busy; }, function () { then(label); });
+}
+
+function loadedGroup(identifier) {
+    return objectManager.getAllObjects("scenery_group").filter(function (g) { return g.identifier === identifier; })[0] || null;
+}
+
+function isUninvented(index) {
+    return park.research.uninventedItems.some(function (i) { return i.type === "scenery" && i.object === index; });
+}
+
+function canPlace(identifier) {
+    var o = objectManager.getAllObjects("small_scenery").filter(function (s) { return s.identifier === identifier; })[0];
+    if (!o) return false;
+    var ok = false;
+    context.queryAction("smallsceneryplace", { x: 59 * 32, y: 47 * 32, z: 0, direction: 0, quadrant: 0, object: o.index, primaryColour: 0, secondaryColour: 0, tertiaryColour: 0 }, function (r) { ok = !r.error; });
+    return ok;
+}
+
+runTests("test-mas-decorados", function (done) {
+    registerResearchAction();
+    openWindow();
+    log("temas en la lista: " + state.themes.length + " | " + state.themes.slice(0, 4).map(function (th) { return th.name + " = " + statusText(th); }).join(" ; "));
+    check(state.themes.length > 0, "lista temas");
+    check(text(W, "action") === t("add") && fakeWindows[W].findWidget("action").isDisabled, "sin selección el botón está apagado");
+
+    var classic = loadedGroup("rct2.scenery_group.scgclass");
+    check(classic && isUninvented(classic.index), "parque3 tiene la temática romana sin investigar");
+    pickAndRun("rct2.scenery_group.scgclass", function (label) {
+        check(label === t("complete"), "un tema cargado se completa: " + label);
+        check(park.research.isObjectResearched("scenery_group", classic.index) && !isUninvented(classic.index), "queda investigado y fuera de la cola");
+        check(themeRow("rct2.scenery_group.scgclass") < 0, "sale de la lista");
+        log("mensaje: " + text(W, "message") + " | " + text(W, "detail"));
+
+        pickAndRun("rct2.scenery_group.scgabstr", function (label2) {
+            var abstract = loadedGroup("rct2.scenery_group.scgabstr");
+            log("mensaje: " + text(W, "message") + " | " + text(W, "detail"));
+            check(label2 === t("add") && abstract !== null, "agrega un tema nuevo");
+            check(abstract && park.research.isObjectResearched("scenery_group", abstract.index), "el tema nuevo queda investigado");
+            check(text(W, "detail") === counted("added", THEME_TABLE["rct2.scenery_group.scgabstr"][0]), "informa la cantidad de la tabla: " + text(W, "detail"));
+            check(canPlace("rct2.scenery_small.tge1"), "un decorado del tema nuevo se puede colocar");
+
+            // Tema a medias: el grupo cargado sin sus objetos.
+            var west = objectManager.load("rct2.scenery_group.scgwwest");
+            reload();
+            var row = themeRow("rct2.scenery_group.scgwwest");
+            check(row >= 0 && state.themes[row].status === "partial" && state.themes[row].missing === THEME_TABLE["rct2.scenery_group.scgwwest"][0], "detecta el tema a medias con lo que falta: " + (row >= 0 && statusText(state.themes[row])));
+            pickAndRun("rct2.scenery_group.scgwwest", function () {
+                var missing = missingItems(loadedGroup("rct2.scenery_group.scgwwest"), loadedIdentifiers(), identifierSet(objectManager.installedObjects));
+                check(missing.length === 0, "completar carga todo lo que faltaba");
+                expansionCase();
+            });
+        });
+    });
+
+    function expansionCase() {
+        var theme = state.themes.filter(function (th) { return th.expansion && th.status === "new" && THEME_TABLE[th.identifier]; })[0];
+        check(!!theme, "hay un tema de expansión para probar");
+        var first = THEME_TABLE[theme.identifier][1], groupsBefore = objectManager.getAllObjects("scenery_group").length;
+        var research = JSON.stringify([park.research.inventedItems, park.research.uninventedItems]);
+        ui.imageManager = { getImageInfo: function () { return { width: 0, height: 0 }; } };
+        pickAndRun(theme.identifier, function () {
+            delete ui.imageManager;
+            log("expansión sin datos: " + text(W, "message") + " | " + text(W, "detail"));
+            check(text(W, "detail") === t("missingData", theme.expansion), "avisa que faltan los datos");
+            check(!loadedIdentifiers()[first] && objectManager.getAllObjects("scenery_group").length === groupsBefore, "no deja nada cargado");
+            check(JSON.stringify([park.research.inventedItems, park.research.uninventedItems]) === research, "no toca la investigación");
+            check(themeRow(theme.identifier) >= 0, "el tema sigue en la lista");
+            check(fakeErrors.length === 0, "sin errores en pantalla");
+            done();
+        });
+    }
+});
