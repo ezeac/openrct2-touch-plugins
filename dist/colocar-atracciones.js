@@ -217,7 +217,6 @@ function placeTrack(mark, z, flags, done) {
 // Screen-up direction on the map for each camera rotation: a tap aimed at something raised lands that way on the ground.
 var VIEW_UP = [[1, 1], [-1, 1], [-1, -1], [1, -1]];
 
-// The free spot next to the ride closest to the tap, after undoing the shift caused by the ride's height.
 // The spot on a given tile, if it is right next to the ride.
 function entranceSpotOn(x, y, rideTiles) {
     var spot = null, taken = rideTiles.some(function (t) {
@@ -231,6 +230,7 @@ function entranceSpotOn(x, y, rideTiles) {
     return spot;
 }
 
+// The free spot next to the ride closest to the tap, after undoing the shift caused by the ride's height.
 function entranceSpot(mapCoords, rideTiles, rideZ, rotation) {
     var tx = Math.floor(mapCoords.x / 32), ty = Math.floor(mapCoords.y / 32);
     var surface = surfaceOf(tx, ty);
@@ -1264,6 +1264,8 @@ function markEntranceSpot(spot) {
         context.executeAction("rideentranceexitplace", entranceArgs(spot, ride, isExit, GHOST_FLAG), safely(function (r) {
             state.busy = false;
             if (r.error) {
+                // The previous preview is already gone, so nothing is left marked to place.
+                state.entrance = null;
                 state.message = errorText(r);
                 refresh();
                 return;
@@ -1300,7 +1302,7 @@ function onPlace() {
     if (state.busy) return;
     if (state.phase === "marked" && isScenery()) placeSceneryItem();
     else if (state.phase === "marked") placeRide();
-    else if (state.phase === "entrance" || state.phase === "exit") placeEntrance();
+    else if ((state.phase === "entrance" || state.phase === "exit") && state.entrance) placeEntrance();
 }
 
 function onCancel() {
@@ -1322,7 +1324,7 @@ function openWindow() {
         refresh();
         return;
     }
-    var y = 18, half = (WIDTH - 16) / 2, quarter = (WIDTH - 18) / 4;
+    var y = 18, half = (WIDTH - 16) / 2, quarter = Math.floor((WIDTH - 18) / 4);
     ui.openWindow({
         classification: WINDOW_CLASS,
         title: t("title"),

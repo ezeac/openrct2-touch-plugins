@@ -700,6 +700,8 @@ function markEntranceSpot(spot) {
         context.executeAction("rideentranceexitplace", entranceArgs(spot, ride, isExit, GHOST_FLAG), safely(function (r) {
             state.busy = false;
             if (r.error) {
+                // The previous preview is already gone, so nothing is left marked to place.
+                state.entrance = null;
                 state.message = errorText(r);
                 refresh();
                 return;
@@ -736,7 +738,7 @@ function onPlace() {
     if (state.busy) return;
     if (state.phase === "marked" && isScenery()) placeSceneryItem();
     else if (state.phase === "marked") placeRide();
-    else if (state.phase === "entrance" || state.phase === "exit") placeEntrance();
+    else if ((state.phase === "entrance" || state.phase === "exit") && state.entrance) placeEntrance();
 }
 
 function onCancel() {
@@ -758,7 +760,7 @@ function openWindow() {
         refresh();
         return;
     }
-    var y = 18, half = (WIDTH - 16) / 2, quarter = (WIDTH - 18) / 4;
+    var y = 18, half = (WIDTH - 16) / 2, quarter = Math.floor((WIDTH - 18) / 4);
     ui.openWindow({
         classification: WINDOW_CLASS,
         title: t("title"),
