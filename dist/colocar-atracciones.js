@@ -1310,6 +1310,8 @@ registerPlugin({
             state.ghost = state.entranceGhost = state.sceneryGhost = null;
             state.mark = null;
             state.item = null;
+            ownRides = {};
+            handledRides = {};
             ui.closeWindows(WINDOW_CLASS);
         });
     }
