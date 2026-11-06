@@ -74,7 +74,11 @@ function t(key) {
     }
     var text = translations[key] !== undefined ? translations[key] : TEXTS.en[key];
     for (var i = 1; i < arguments.length; i++) {
-        text = text.replace("{" + (i - 1) + "}", arguments[i]);
+        // As a function, so a "$" in the value is not read as a replacement pattern.
+        var value = arguments[i];
+        text = text.replace("{" + (i - 1) + "}", function () {
+            return value;
+        });
     }
     return text;
 }
@@ -128,6 +132,7 @@ var THEME_TABLE = {
 };
 var STOCK_PREFIXES = ["couger", "mamabear", "official", "openrct2", "rct1", "rct1aa", "rct1beta", "rct1dlc", "rct1ll", "rct1tw", "rct2", "rct2dlc", "rct2tt", "rct2ww", "toontowner", "uces"];
 var STOCK_LOOSE = ["rct1.scenery_wall.playing_card_wall_1", "rct1.scenery_wall.playing_card_wall_2", "rct1.scenery_wall.roman_column_wall", "rct1.scenery_wall.wooden_fence_brown", "rct1.scenery_wall.wooden_fence_brown_gate", "rct1.scenery_wall.wooden_fence_red", "rct1.scenery_wall.wooden_fence_white", "rct1aa.scenery_wall.glass_wall", "rct1aa.scenery_wall.wooden_post_wall_1", "rct1aa.scenery_wall.wooden_post_wall_2", "rct1ll.scenery_wall.medieval_wooden_fence", "rct1ll.scenery_wall.wooden_fence_brown_snow", "rct2ww.scenery_large.damtower", "toontowner.scenery_small.xxbbbr01"];
+var STOCK_CUSTOM_PREFIXES = ["uces"];
 var RESEARCH_ACTION = "masdecorados_research";
 var ITEM_TYPES = {
     scenery_small: "small_scenery", scenery_large: "large_scenery", scenery_wall: "wall",
@@ -178,8 +183,17 @@ function inventTheme(index) {
     }
 }
 
+var installedTypes = null;
+
+// The installed object knows its type: old .DAT identifiers carry no type in their name.
 function typeOf(identifier) {
-    return ITEM_TYPES[identifier.split(".")[1]];
+    if (!installedTypes) {
+        installedTypes = {};
+        objectManager.installedObjects.forEach(function (o) {
+            installedTypes[o.identifier] = o.type;
+        });
+    }
+    return installedTypes[identifier] || ITEM_TYPES[identifier.split(".")[1]];
 }
 
 function isScenery(identifier) {
@@ -340,13 +354,19 @@ function addTheme(theme, done) {
 }
 var LOOSE_LIMITS = { small_scenery: 2047, large_scenery: 2047, wall: 2047, banner: 255, footpath_addition: 255 };
 var LOOSE_PREFIX = "loose:";
-var GAME_ROW = LOOSE_PREFIX + "game";
+var GAME_ROW = "loose-game";
 
-// Items that loaded without images in this session: loading them again would only restart research.
-var blankLoose = {};
+// Items that loaded without images or failed in this session: trying them again would only restart research.
+var skippedLoose = {};
 
-function isStock(identifier) {
-    return STOCK_PREFIXES.indexOf(identifier.split(".")[0]) >= 0 && STOCK_LOOSE.indexOf(identifier) < 0;
+// Part of the game unless it says it comes from the community, as objects copied in under a game prefix do.
+function isStock(o) {
+    var prefix = o.identifier.split(".")[0];
+    if (STOCK_PREFIXES.indexOf(prefix) < 0 || STOCK_LOOSE.indexOf(o.identifier) >= 0) return false;
+    var custom = o.sourceGames.length === 0 || o.sourceGames.every(function (source) {
+        return source === "custom";
+    });
+    return !custom || STOCK_CUSTOM_PREFIXES.indexOf(prefix) >= 0;
 }
 
 // Installed scenery that no theme brings, grouped by its author so a big pack can be added in parts.
@@ -359,7 +379,7 @@ function looseRows(loaded) {
     });
     var rows = {};
     objectManager.installedObjects.forEach(function (o) {
-        if (!LOOSE_LIMITS[o.type] || loaded[o.identifier] || inThemes[o.identifier] || blankLoose[o.identifier] || isStock(o.identifier)) return;
+        if (!LOOSE_LIMITS[o.type] || loaded[o.identifier] || inThemes[o.identifier] || skippedLoose[o.identifier] || isStock(o)) return;
         var key = STOCK_LOOSE.indexOf(o.identifier) >= 0 ? GAME_ROW : LOOSE_PREFIX + (o.authors[0] || "");
         if (!rows[key]) rows[key] = { identifier: key, author: o.authors[0] || "", loose: true, status: "new", items: [] };
         rows[key].items.push({ id: o.identifier, type: o.type });
@@ -392,10 +412,11 @@ function addLoose(row, done) {
     var objects = ids.length > 0 ? objectManager.load(ids) : [];
     objects.forEach(function (object, i) {
         if (!object) {
+            skippedLoose[ids[i]] = true;
             failed++;
         } else if (hasBlankImages(object)) {
             objectManager.unload(ids[i]);
-            blankLoose[ids[i]] = true;
+            skippedLoose[ids[i]] = true;
             blank++;
         } else {
             added++;

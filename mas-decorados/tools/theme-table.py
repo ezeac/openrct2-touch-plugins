@@ -33,3 +33,10 @@ prefixes = sorted(set(d['id'].split('.')[0] for d in objects))
 loose = sorted(d['id'] for d in objects if d.get('objectType') in SCENERY and d['id'] not in members)
 print('var STOCK_PREFIXES = %s;' % json.dumps(prefixes))
 print('var STOCK_LOOSE = %s;' % json.dumps(loose))
+
+# Prefijos de objetos del juego que vienen marcados como de la comunidad: con ellos el origen no alcanza para distinguirlos.
+def sources(d):
+    sg = d.get('sourceGame') or []
+    return [sg] if isinstance(sg, str) else sg
+custom = sorted(set(d['id'].split('.')[0] for d in objects if not set(sources(d)) - {'custom'}))
+print('var STOCK_CUSTOM_PREFIXES = %s;' % json.dumps(custom))

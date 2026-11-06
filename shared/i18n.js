@@ -8,7 +8,11 @@ function t(key) {
     }
     var text = translations[key] !== undefined ? translations[key] : TEXTS.en[key];
     for (var i = 1; i < arguments.length; i++) {
-        text = text.replace("{" + (i - 1) + "}", arguments[i]);
+        // As a function, so a "$" in the value is not read as a replacement pattern.
+        var value = arguments[i];
+        text = text.replace("{" + (i - 1) + "}", function () {
+            return value;
+        });
     }
     return text;
 }

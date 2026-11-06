@@ -1,12 +1,18 @@
 var LOOSE_LIMITS = { small_scenery: 2047, large_scenery: 2047, wall: 2047, banner: 255, footpath_addition: 255 };
 var LOOSE_PREFIX = "loose:";
-var GAME_ROW = LOOSE_PREFIX + "game";
+var GAME_ROW = "loose-game";
 
-// Items that loaded without images in this session: loading them again would only restart research.
-var blankLoose = {};
+// Items that loaded without images or failed in this session: trying them again would only restart research.
+var skippedLoose = {};
 
-function isStock(identifier) {
-    return STOCK_PREFIXES.indexOf(identifier.split(".")[0]) >= 0 && STOCK_LOOSE.indexOf(identifier) < 0;
+// Part of the game unless it says it comes from the community, as objects copied in under a game prefix do.
+function isStock(o) {
+    var prefix = o.identifier.split(".")[0];
+    if (STOCK_PREFIXES.indexOf(prefix) < 0 || STOCK_LOOSE.indexOf(o.identifier) >= 0) return false;
+    var custom = o.sourceGames.length === 0 || o.sourceGames.every(function (source) {
+        return source === "custom";
+    });
+    return !custom || STOCK_CUSTOM_PREFIXES.indexOf(prefix) >= 0;
 }
 
 // Installed scenery that no theme brings, grouped by its author so a big pack can be added in parts.
@@ -19,7 +25,7 @@ function looseRows(loaded) {
     });
     var rows = {};
     objectManager.installedObjects.forEach(function (o) {
-        if (!LOOSE_LIMITS[o.type] || loaded[o.identifier] || inThemes[o.identifier] || blankLoose[o.identifier] || isStock(o.identifier)) return;
+        if (!LOOSE_LIMITS[o.type] || loaded[o.identifier] || inThemes[o.identifier] || skippedLoose[o.identifier] || isStock(o)) return;
         var key = STOCK_LOOSE.indexOf(o.identifier) >= 0 ? GAME_ROW : LOOSE_PREFIX + (o.authors[0] || "");
         if (!rows[key]) rows[key] = { identifier: key, author: o.authors[0] || "", loose: true, status: "new", items: [] };
         rows[key].items.push({ id: o.identifier, type: o.type });
@@ -52,10 +58,11 @@ function addLoose(row, done) {
     var objects = ids.length > 0 ? objectManager.load(ids) : [];
     objects.forEach(function (object, i) {
         if (!object) {
+            skippedLoose[ids[i]] = true;
             failed++;
         } else if (hasBlankImages(object)) {
             objectManager.unload(ids[i]);
-            blankLoose[ids[i]] = true;
+            skippedLoose[ids[i]] = true;
             blank++;
         } else {
             added++;

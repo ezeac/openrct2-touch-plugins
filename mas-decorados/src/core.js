@@ -48,8 +48,17 @@ function inventTheme(index) {
     }
 }
 
+var installedTypes = null;
+
+// The installed object knows its type: old .DAT identifiers carry no type in their name.
 function typeOf(identifier) {
-    return ITEM_TYPES[identifier.split(".")[1]];
+    if (!installedTypes) {
+        installedTypes = {};
+        objectManager.installedObjects.forEach(function (o) {
+            installedTypes[o.identifier] = o.type;
+        });
+    }
+    return installedTypes[identifier] || ITEM_TYPES[identifier.split(".")[1]];
 }
 
 function isScenery(identifier) {
