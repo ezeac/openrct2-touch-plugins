@@ -18,7 +18,7 @@ var TEXTS = {
         complete: "Complete",
         added: "{0} items added: reopen the scenery menu.",
         addedOne: "1 item added: reopen the scenery menu.",
-        addedFailed: "{0} items added, {1} could not be loaded.",
+        addedFailed: "Added: {0}. Could not be loaded: {1}.",
         completed: "Complete now: reopen the scenery menu.",
         missingData: "Needs the {0} files, which this game lacks.",
         loadFailed: "It could not be loaded."
@@ -42,7 +42,7 @@ var TEXTS = {
         complete: "Completar",
         added: "Se agregaron {0} objetos: reabrí el menú de decorados.",
         addedOne: "Se agregó 1 objeto: reabrí el menú de decorados.",
-        addedFailed: "Se agregaron {0} objetos, {1} no se pudieron cargar.",
+        addedFailed: "Agregados: {0}. No se pudieron cargar: {1}.",
         completed: "Quedó completo: reabrí el menú de decorados.",
         missingData: "Necesita los archivos de {0}, que este juego no tiene.",
         loadFailed: "No se pudo cargar."

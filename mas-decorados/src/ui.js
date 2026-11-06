@@ -1,6 +1,6 @@
 var WINDOW_CLASS = "mas-decorados";
 var SCENERY_WINDOW_CLASS = 18;
-var WIDTH = 360;
+var WIDTH = 460;
 var LIST_HEIGHT = 170;
 
 var state = { themes: [], selected: -1, message: "", detail: "", busy: false };
@@ -89,8 +89,13 @@ function resultDetail(theme, result) {
 }
 
 function onAction() {
-    var theme = selectedTheme();
-    if (!theme || state.busy) return;
+    var selected = selectedTheme();
+    if (!selected || state.busy) return;
+    // The list may be stale if the park changed since it was shown.
+    var theme = listThemes().filter(function (th) {
+        return th.identifier === selected.identifier;
+    })[0];
+    if (!theme) return reload(themeName(selected), t("completed"));
     state.busy = true;
     refresh();
     addTheme(theme, safely(function (result) {
@@ -107,6 +112,8 @@ function openWindow() {
         reload();
         return;
     }
+    // A pending answer could have been lost with the previous window.
+    state.busy = false;
     var y = 18;
     ui.openWindow({
         classification: WINDOW_CLASS,
@@ -118,7 +125,7 @@ function openWindow() {
             {
                 type: "listview", name: "list", x: 6, y: y + 16, width: WIDTH - 12, height: LIST_HEIGHT,
                 scrollbars: "vertical", isStriped: true, showColumnHeaders: true, canSelect: true,
-                columns: [{ header: t("theme"), ratioWidth: 3 }, { header: t("status"), ratioWidth: 2 }],
+                columns: [{ header: t("theme"), ratioWidth: 2 }, { header: t("status"), ratioWidth: 1 }],
                 items: [],
                 onClick: safely(function (row) {
                     state.selected = row;

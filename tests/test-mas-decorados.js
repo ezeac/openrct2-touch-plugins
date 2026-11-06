@@ -32,9 +32,27 @@ function canPlace(identifier) {
     return ok;
 }
 
+function researchState() {
+    var r = park.research;
+    return { stage: r.stage, progress: r.progress, item: JSON.stringify(r.expectedItem) };
+}
+
+function itemsResearched(group) {
+    return group.items.filter(function (id) {
+        var o = loadedObject(id);
+        return o && typeOf(id) !== COSTUMES && park.research.isObjectResearched(typeOf(id), o.index);
+    }).length;
+}
+
 runTests("test-mas-decorados", function (done) {
     registerResearchAction();
+    var studyBefore = researchState();
+    log("investigación al empezar: " + JSON.stringify(studyBefore));
+    check(studyBefore.stage === "designing" && studyBefore.item !== "null", "parque3 tiene algo en investigación");
     openWindow();
+    var keys = state.themes.map(function (th) { return sortKey(th.name); });
+    check(keys.every(function (k, i) { return i === 0 || keys[i - 1] <= k; }), "lista ordenada sin importar mayúsculas ni acentos");
+    check(THEME_TABLE["rct2dlc.scenery_group.scgpanda"] !== undefined, "la tabla incluye los temas empaquetados en .parkobj");
     log("temas en la lista: " + state.themes.length + " | " + state.themes.slice(0, 4).map(function (th) { return th.name + " = " + statusText(th); }).join(" ; "));
     check(state.themes.length > 0, "lista temas");
     check(text(W, "action") === t("add") && fakeWindows[W].findWidget("action").isDisabled, "sin selección el botón está apagado");
@@ -54,6 +72,9 @@ runTests("test-mas-decorados", function (done) {
             check(abstract && park.research.isObjectResearched("scenery_group", abstract.index), "el tema nuevo queda investigado");
             check(text(W, "detail") === counted("added", THEME_TABLE["rct2.scenery_group.scgabstr"][0]), "informa la cantidad de la tabla: " + text(W, "detail"));
             check(canPlace("rct2.scenery_small.tge1"), "un decorado del tema nuevo se puede colocar");
+            var studyAfter = researchState();
+            check(studyAfter.stage === studyBefore.stage && studyAfter.item === studyBefore.item && studyAfter.progress >= studyBefore.progress,
+                "cargar objetos no reinicia la investigación: " + JSON.stringify(studyAfter));
 
             // Tema a medias: el grupo cargado sin sus objetos.
             var west = objectManager.load("rct2.scenery_group.scgwwest");
@@ -82,7 +103,32 @@ runTests("test-mas-decorados", function (done) {
             check(JSON.stringify([park.research.inventedItems, park.research.uninventedItems]) === research, "no toca la investigación");
             check(themeRow(theme.identifier) >= 0, "el tema sigue en la lista");
             check(fakeErrors.length === 0, "sin errores en pantalla");
-            done();
+            studyingCase();
+        });
+    }
+
+    // A theme under research: completing it must make its items available now, not when the research ends.
+    function studyingCase() {
+        var r = park.research;
+        r.priorities = ["scenery"];
+        r.funding = 3;
+        r.stage = "initial_research";
+        r.progress = 65000;
+        waitFor(function () { return r.stage === "designing"; }, function () {
+            var item = r.expectedItem;
+            check(item && item.type === "scenery", "queda un tema en investigación: " + JSON.stringify(item));
+            if (!item || item.type !== "scenery") return done();
+            var group = objectManager.getObject("scenery_group", item.object);
+            log("tema en investigación: " + group.identifier + " con " + itemsResearched(group) + " objetos disponibles");
+            pickAndRun(group.identifier, function () {
+                log("mensaje: " + text(W, "message") + " | " + text(W, "detail"));
+                var available = itemsResearched(group), total = group.items.filter(isScenery).length;
+                check(available === total, "sus objetos quedan disponibles: " + available + "/" + total);
+                check(r.isObjectResearched("scenery_group", group.index) && themeRow(group.identifier) < 0, "el tema queda investigado y sale de la lista");
+                check(r.expectedItem === null || r.expectedItem.object !== group.index || r.expectedItem.type !== "scenery", "la investigación pasa a otra cosa");
+                check(fakeErrors.length === 0, "sin errores en pantalla");
+                done();
+            });
         });
     }
 });

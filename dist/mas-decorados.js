@@ -20,7 +20,7 @@ var TEXTS = {
         complete: "Complete",
         added: "{0} items added: reopen the scenery menu.",
         addedOne: "1 item added: reopen the scenery menu.",
-        addedFailed: "{0} items added, {1} could not be loaded.",
+        addedFailed: "Added: {0}. Could not be loaded: {1}.",
         completed: "Complete now: reopen the scenery menu.",
         missingData: "Needs the {0} files, which this game lacks.",
         loadFailed: "It could not be loaded."
@@ -44,7 +44,7 @@ var TEXTS = {
         complete: "Completar",
         added: "Se agregaron {0} objetos: reabrí el menú de decorados.",
         addedOne: "Se agregó 1 objeto: reabrí el menú de decorados.",
-        addedFailed: "Se agregaron {0} objetos, {1} no se pudieron cargar.",
+        addedFailed: "Agregados: {0}. No se pudieron cargar: {1}.",
         completed: "Quedó completo: reabrí el menú de decorados.",
         missingData: "Necesita los archivos de {0}, que este juego no tiene.",
         loadFailed: "No se pudo cargar."
@@ -96,6 +96,7 @@ var THEME_TABLE = {
     "rct2.scenery_group.scgwater": [6, "rct2.scenery_wall.wallwf32"],
     "rct2.scenery_group.scgwond": [27, "rct2.scenery_small.twh1"],
     "rct2.scenery_group.scgwwest": [10, "rct2.scenery_small.wag1"],
+    "rct2dlc.scenery_group.scgpanda": [3, "rct2dlc.scenery_small.bigpanda"],
     "rct2tt.scenery_group.scg1920s": [48, "rct2tt.scenery_large.perdtk01"],
     "rct2tt.scenery_group.scg1920w": [117, "rct2tt.scenery_small.oldnyk01"],
     "rct2tt.scenery_group.scg1960s": [39, "rct2tt.scenery_small.runway01"],
@@ -119,27 +120,46 @@ var ITEM_TYPES = {
 var COSTUMES = "peep_animations";
 var EXPANSIONS = { wacky_worlds: "Wacky Worlds", time_twister: "Time Twister" };
 
-// Marking a theme as researched changes the game state, so it goes through an action.
+var RESEARCH_STAGES = ["initial_research", "designing", "completing_design", "unknown", "finished_all"];
+
+// Marks a theme as researched and puts research back where it was, since loading any object restarts it.
 function registerResearchAction() {
-    context.registerAction(RESEARCH_ACTION, function () {
-        return {};
-    }, function (e) {
-        var index = e.args.object;
-        var isTheme = function (item) {
-            return item.type === "scenery" && item.object === index;
-        };
-        var research = park.research;
-        // The game puts back in the queue any loaded theme missing from both lists, so it goes to invented first.
-        var invented = research.inventedItems;
-        if (!invented.some(isTheme)) {
-            invented.push({ category: "scenery", type: "scenery", object: index });
-            research.inventedItems = invented;
+    var check = function (e) {
+        var args = e.args, valid = typeof args.object === "number"
+            && (args.stage === undefined || RESEARCH_STAGES.indexOf(args.stage) >= 0 && typeof args.progress === "number" && args.progress >= 0);
+        return valid ? {} : { error: 1, errorMessage: "Invalid arguments" };
+    };
+    context.registerAction(RESEARCH_ACTION, check, function (e) {
+        var result = check(e);
+        if (result.error) return result;
+        // Before the lists: setting them rebuilds what is available, leaving out the item under research.
+        if (e.args.stage !== undefined) {
+            park.research.stage = e.args.stage;
+            park.research.progress = e.args.progress;
         }
-        research.uninventedItems = research.uninventedItems.filter(function (item) {
-            return !isTheme(item);
-        });
+        if (e.args.object >= 0) inventTheme(e.args.object);
         return {};
     });
+}
+
+// Each list is set only if it changes, because setting the queue loses the "new ride" flag of its rides until the park is reloaded.
+function inventTheme(index) {
+    var isTheme = function (item) {
+        return item.type === "scenery" && item.object === index;
+    };
+    var research = park.research;
+    // The game puts back in the queue any loaded theme missing from both lists, so it goes to invented first.
+    var invented = research.inventedItems;
+    if (!invented.some(isTheme)) {
+        invented.push({ category: "scenery", type: "scenery", object: index });
+        research.inventedItems = invented;
+    }
+    var uninvented = research.uninventedItems;
+    if (uninvented.some(isTheme)) {
+        research.uninventedItems = uninvented.filter(function (item) {
+            return !isTheme(item);
+        });
+    }
 }
 
 function typeOf(identifier) {
@@ -183,6 +203,10 @@ function missingItems(group, loaded, installedIds) {
     });
 }
 
+function sortKey(name) {
+    return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
 /*
  * Themes the park lacks or has only in part: "new" when it is not loaded, "partial" when some of its items are missing,
  * and "unresearched" when everything is there but the game still keeps it for research.
@@ -200,6 +224,11 @@ function listThemes() {
         if (!group) {
             theme.status = "new";
         } else {
+            // A theme without scenery never counts as researched for the game, so it would stay in the list for good.
+            var scenery = group.items.filter(function (id) {
+                return isScenery(id) && (loaded[id] || installedIds[id]);
+            });
+            if (scenery.length === 0) return;
             theme.name = group.name;
             theme.missing = missingItems(group, loaded, installedIds).filter(isScenery).length;
             theme.researched = park.research.isObjectResearched("scenery_group", group.index);
@@ -209,7 +238,8 @@ function listThemes() {
         themes.push(theme);
     });
     return themes.sort(function (a, b) {
-        return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+        var ka = sortKey(a.name), kb = sortKey(b.name);
+        return ka < kb ? -1 : ka > kb ? 1 : 0;
     });
 }
 
@@ -220,45 +250,79 @@ function hasBlankImages(object) {
     return !info || info.width === 0;
 }
 
-// One item of an expansion theme is loaded to check its images; a lone item leaves nothing behind when unloaded.
-function expansionDataMissing(identifier) {
-    var table = THEME_TABLE[identifier], first = table ? table[1] : null;
-    if (!first || loadedIdentifiers()[first]) return false;
-    var object = objectManager.load(first);
-    if (!object) return false;
-    var blank = hasBlankImages(object);
-    if (blank) objectManager.unload(first);
-    return blank;
+function loadedObject(identifier) {
+    return objectManager.getAllObjects(typeOf(identifier)).filter(function (o) {
+        return o.identifier === identifier;
+    })[0] || null;
 }
 
-function markResearched(group, done) {
-    if (park.research.isObjectResearched("scenery_group", group.index)) return done();
-    context.executeAction(RESEARCH_ACTION, { object: group.index }, function () {
-        done();
-    });
+// An item that comes from the theme's expansion: the first of the table, or the first missing one if the theme is loaded.
+function probeItem(theme, group) {
+    if (!group) return THEME_TABLE[theme.identifier] ? THEME_TABLE[theme.identifier][1] : null;
+    var installed = identifierSet(objectManager.installedObjects);
+    return missingItems(group, loadedIdentifiers(), installed).filter(function (id) {
+        return isScenery(id) && expansionOf(installed[id]);
+    })[0] || null;
 }
 
-// Loads the theme and whatever it lacks, then makes it available. Passes the number of scenery items added.
+// Checks the images of one item, loading it alone if needed: a lone item leaves nothing behind when unloaded.
+function probeExpansion(theme, group, load) {
+    var id = probeItem(theme, group);
+    if (!id) return { blank: false };
+    var object = loadedObject(id);
+    if (object) return { blank: hasBlankImages(object) };
+    object = load(id);
+    if (!object) return { blank: false };
+    if (!hasBlankImages(object)) return { blank: false, kept: id };
+    objectManager.unload(id);
+    return { blank: true };
+}
+
+function isStudying(group) {
+    var item = group ? park.research.expectedItem : null;
+    return !!item && item.type === "scenery" && item.object === group.index;
+}
+
+/*
+ * Loads the theme and whatever it lacks, then makes it available. Passes the number of scenery items added.
+ * Loading restarts research, so its stage and progress are put back, unless the theme itself was under research.
+ */
 function addTheme(theme, done) {
-    if (theme.expansion && theme.status === "new" && expansionDataMissing(theme.identifier)) {
-        return done({ error: "missingData" });
-    }
-    var group = identifierSet(objectManager.getAllObjects("scenery_group"))[theme.identifier] || objectManager.load(theme.identifier);
-    if (!group) return done({ error: "loadFailed" });
+    var group = identifierSet(objectManager.getAllObjects("scenery_group"))[theme.identifier] || null;
+    var studying = isStudying(group), research = park.research;
+    var restore = studying ? { stage: "initial_research", progress: 0 } : { stage: research.stage, progress: research.progress };
+    var touched = false;
+    var load = function (id) {
+        touched = true;
+        return objectManager.load(id);
+    };
+    var finish = function (index, result) {
+        var args = { object: index >= 0 && !research.isObjectResearched("scenery_group", index) ? index : -1 };
+        if (touched || studying) {
+            args.stage = restore.stage;
+            args.progress = restore.progress;
+        }
+        if (args.object < 0 && args.stage === undefined) return done(result);
+        context.executeAction(RESEARCH_ACTION, args, function () {
+            done(result);
+        });
+    };
+    var probe = theme.expansion ? probeExpansion(theme, group, load) : { blank: false };
+    if (probe.blank) return finish(-1, { error: "missingData" });
+    group = group || load(theme.identifier);
+    if (!group) return finish(-1, { error: "loadFailed" });
     var installedIds = identifierSet(objectManager.installedObjects);
-    var added = 0, failed = 0;
+    var added = probe.kept && isScenery(probe.kept) ? 1 : 0, failed = 0;
     missingItems(group, loadedIdentifiers(), installedIds).forEach(function (id) {
-        var object = objectManager.load(id);
+        var object = load(id);
         if (!object) failed++;
         else if (isScenery(id)) added++;
     });
-    markResearched(group, function () {
-        done({ added: added, failed: failed });
-    });
+    finish(group.index, { added: added, failed: failed });
 }
 var WINDOW_CLASS = "mas-decorados";
 var SCENERY_WINDOW_CLASS = 18;
-var WIDTH = 360;
+var WIDTH = 460;
 var LIST_HEIGHT = 170;
 
 var state = { themes: [], selected: -1, message: "", detail: "", busy: false };
@@ -347,8 +411,13 @@ function resultDetail(theme, result) {
 }
 
 function onAction() {
-    var theme = selectedTheme();
-    if (!theme || state.busy) return;
+    var selected = selectedTheme();
+    if (!selected || state.busy) return;
+    // The list may be stale if the park changed since it was shown.
+    var theme = listThemes().filter(function (th) {
+        return th.identifier === selected.identifier;
+    })[0];
+    if (!theme) return reload(themeName(selected), t("completed"));
     state.busy = true;
     refresh();
     addTheme(theme, safely(function (result) {
@@ -365,6 +434,8 @@ function openWindow() {
         reload();
         return;
     }
+    // A pending answer could have been lost with the previous window.
+    state.busy = false;
     var y = 18;
     ui.openWindow({
         classification: WINDOW_CLASS,
@@ -376,7 +447,7 @@ function openWindow() {
             {
                 type: "listview", name: "list", x: 6, y: y + 16, width: WIDTH - 12, height: LIST_HEIGHT,
                 scrollbars: "vertical", isStriped: true, showColumnHeaders: true, canSelect: true,
-                columns: [{ header: t("theme"), ratioWidth: 3 }, { header: t("status"), ratioWidth: 2 }],
+                columns: [{ header: t("theme"), ratioWidth: 2 }, { header: t("status"), ratioWidth: 1 }],
                 items: [],
                 onClick: safely(function (row) {
                     state.selected = row;

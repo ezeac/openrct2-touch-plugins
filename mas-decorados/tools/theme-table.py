@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 # Uso: theme-table.py <carpeta object del juego> > ../src/theme-table.js
 # La API no da el contenido de un tema sin cargarlo, así que se arma desde los objetos que trae OpenRCT2 0.5.6.
-import glob, json, sys
+import glob, json, sys, zipfile
 
+# Los objetos vienen sueltos en .json o empaquetados en .parkobj, un zip con su object.json.
+def read(path):
+    if path.endswith('.parkobj'):
+        return json.loads(zipfile.ZipFile(path).read('object.json').decode('utf-8-sig'))
+    return json.load(open(path, encoding='utf-8-sig'))
+
+root = sys.argv[1].rstrip('/')
+paths = glob.glob(root + '/**/*.json', recursive=True) + glob.glob(root + '/**/*.parkobj', recursive=True)
 rows = []
-for path in sorted(glob.glob(sys.argv[1].rstrip('/') + '/**/*.json', recursive=True)):
-    data = json.load(open(path, encoding='utf-8-sig'))
+for path in sorted(paths, key=lambda p: p.rsplit('/', 1)[1]):
+    data = read(path)
     if data.get('objectType') != 'scenery_group':
         continue
     scenery = [e for e in data.get('properties', {}).get('entries', []) if e.split('.')[1] != 'peep_animations']

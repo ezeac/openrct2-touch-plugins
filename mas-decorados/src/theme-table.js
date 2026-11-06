@@ -30,6 +30,7 @@ var THEME_TABLE = {
     "rct2.scenery_group.scgwater": [6, "rct2.scenery_wall.wallwf32"],
     "rct2.scenery_group.scgwond": [27, "rct2.scenery_small.twh1"],
     "rct2.scenery_group.scgwwest": [10, "rct2.scenery_small.wag1"],
+    "rct2dlc.scenery_group.scgpanda": [3, "rct2dlc.scenery_small.bigpanda"],
     "rct2tt.scenery_group.scg1920s": [48, "rct2tt.scenery_large.perdtk01"],
     "rct2tt.scenery_group.scg1920w": [117, "rct2tt.scenery_small.oldnyk01"],
     "rct2tt.scenery_group.scg1960s": [39, "rct2tt.scenery_small.runway01"],
