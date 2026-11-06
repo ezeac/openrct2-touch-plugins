@@ -123,6 +123,8 @@ runTests("test-copiar", function (done) {
         idle(function () {
             var item = state.item, ghost = state.sceneryGhost;
             click(W, "copy");
+            tapElement(to.x, to.y, function (e) { return e.isGhost && /scenery/.test(e.type); });
+            check(state.phase === "copy" && text(W, "status") === t("copyGhost"), "la vista previa no se copia: " + text(W, "status"));
             click(W, "cancel");
             check(state.phase === "marked" && state.item === item && state.sceneryGhost === ghost && ghost !== null, "Cancelar vuelve a la marca anterior");
             check(fakeTool && fakeTool.cursor === "cross_hair", "con la herramienta de colocar");

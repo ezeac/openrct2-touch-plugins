@@ -36,6 +36,7 @@ var TEXTS = {
         copyPick: "Tap a scenery item on the map.",
         copied: "Copied. Tap where it goes.",
         copyWall: "Walls: use the game's eyedropper.",
+        copyGhost: "That is a preview. Tap a placed one.",
         copyNothing: "That is not scenery. Tap another.",
         copyUnavailable: "Not available in this park yet."
     },
@@ -76,6 +77,7 @@ var TEXTS = {
         copyPick: "Tocá un decorado del mapa.",
         copied: "Copiado. Tocá dónde va.",
         copyWall: "Muros: usá el gotero del juego.",
+        copyGhost: "Es una vista previa. Tocá uno colocado.",
         copyNothing: "Eso no es un decorado. Tocá otro.",
         copyUnavailable: "Todavía no está disponible en el parque."
     }

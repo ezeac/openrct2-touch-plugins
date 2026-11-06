@@ -369,6 +369,12 @@ function onActionQuery(e) {
 
 // If a tap still got through, the plugin takes back that placement and lets the player adjust it.
 function onActionExecute(e) {
+    // The game reuses the number of a demolished ride, so a new ride with it must not look already handled.
+    if (e.action === "ridedemolish" && e.args.modifyType === 0) {
+        delete ownRides[e.args.ride];
+        delete handledRides[e.args.ride];
+        return;
+    }
     if (isNativeScenery(e)) {
         captureScenery(e, !(e.args.flags & GHOST_FLAG));
         return;
@@ -515,12 +521,13 @@ function copyRefused(message) {
 }
 
 function isAvailable(kind, index) {
-    return cheats.ignoreResearchStatus || park.research.isObjectResearched(ELEMENT_TYPES[kind], index);
+    return context.mode === "scenario_editor" || cheats.ignoreResearchStatus || park.research.isObjectResearched(ELEMENT_TYPES[kind], index);
 }
 
 function copyFrom(e) {
     var tile = e.mapCoords && e.tileElementIndex !== undefined ? map.getTile(Math.floor(e.mapCoords.x / 32), Math.floor(e.mapCoords.y / 32)) : null;
     var element = tile ? tile.elements[e.tileElementIndex] : null;
+    if (element && element.isGhost) return copyRefused(t("copyGhost"));
     if (element && element.type === "wall") return copyRefused(t("copyWall"));
     var kind = element && element.type === "small_scenery" ? "small" : element && element.type === "large_scenery" ? "large" : null;
     if (!kind) return copyRefused(t("copyNothing"));
@@ -534,6 +541,8 @@ function copyFrom(e) {
     state.busy = true;
     refresh();
     clearGhosts(safely(function () {
+        // Closing the window meanwhile already reset everything.
+        if (state.phase !== "copy") return;
         if (previousRide >= 0) demolishRide(previousRide);
         state.busy = false;
         state.kind = "scenery";
