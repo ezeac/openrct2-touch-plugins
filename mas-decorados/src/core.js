@@ -93,10 +93,7 @@ function sortKey(name) {
     return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
-/*
- * Themes the park lacks or has only in part: "new" when it is not loaded, "partial" when some of its items are missing,
- * and "unresearched" when everything is there but the game still keeps it for research.
- */
+// Themes the park lacks ("new"), has in part ("partial") or has whole but still keeps for research ("unresearched").
 function listThemes() {
     var installedList = objectManager.installedObjects;
     var installedIds = identifierSet(installedList);
@@ -169,10 +166,8 @@ function isStudying(group) {
     return !!item && item.type === "scenery" && item.object === group.index;
 }
 
-/*
- * Loads the theme and whatever it lacks, then makes it available. Passes the number of scenery items added.
- * Loading restarts research, so its stage and progress are put back, unless the theme itself was under research.
- */
+// Loads the theme and whatever it lacks, then makes it available. Passes the number of scenery items added.
+// Loading restarts research, so it is put back as it was, unless the theme itself was under research.
 function addTheme(theme, done) {
     var group = identifierSet(objectManager.getAllObjects("scenery_group"))[theme.identifier] || null;
     var studying = isStudying(group), research = park.research;
