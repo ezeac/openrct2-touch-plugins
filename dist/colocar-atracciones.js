@@ -35,6 +35,7 @@ var TEXTS = {
         sceneryFailed: "The scenery could not be placed",
         sceneryKept: "The game had already placed it. Tap for another.",
         copy: "Copy from map",
+        move: "Move it one step that way",
         copyPick: "Tap a scenery item on the map.",
         copied: "Copied. Tap where it goes.",
         copyWall: "Walls: use the game's eyedropper.",
@@ -76,6 +77,7 @@ var TEXTS = {
         sceneryFailed: "No se pudo colocar el decorado",
         sceneryKept: "El juego ya lo había colocado. Tocá para otro.",
         copy: "Copiar del mapa",
+        move: "Moverlo un paso hacia ese lado",
         copyPick: "Tocá un decorado del mapa.",
         copied: "Copiado. Tocá dónde va.",
         copyWall: "Muros: usá el gotero del juego.",
@@ -216,6 +218,19 @@ function placeTrack(mark, z, flags, done) {
 var VIEW_UP = [[1, 1], [-1, 1], [-1, -1], [1, -1]];
 
 // The free spot next to the ride closest to the tap, after undoing the shift caused by the ride's height.
+// The spot on a given tile, if it is right next to the ride.
+function entranceSpotOn(x, y, rideTiles) {
+    var spot = null, taken = rideTiles.some(function (t) {
+        return t.x === x && t.y === y;
+    });
+    rideTiles.forEach(function (t) {
+        for (var d = 0; d < 4 && !taken && !spot; d++) {
+            if (t.x - DIRS[d][0] === x && t.y - DIRS[d][1] === y) spot = { x: x, y: y, direction: d };
+        }
+    });
+    return spot;
+}
+
 function entranceSpot(mapCoords, rideTiles, rideZ, rotation) {
     var tx = Math.floor(mapCoords.x / 32), ty = Math.floor(mapCoords.y / 32);
     var surface = surfaceOf(tx, ty);
@@ -339,6 +354,8 @@ var THREE_QUARTERS_FLAG = 1 << 25;
 var MIN_SCENERY_Z = 16;
 var MAX_SCENERY_Z = 1784;
 var SCENERY_WINDOW_CLASS = 18;
+// Centre of each quarter of a tile, in the order of quadrantAt.
+var SCENERY_QUADRANT_POINTS = [[8, 8], [8, 24], [24, 24], [24, 8]];
 var REFUND_ACTION = "colocaratracciones_refund";
 var SCENERY_ACTIONS = { smallsceneryplace: "small", largesceneryplace: "large" };
 var ELEMENT_TYPES = { small: "small_scenery", large: "large_scenery" };
@@ -551,6 +568,11 @@ var ENABLED_KEY = "colocar-atracciones.confirmar";
 var SCENERY_ENABLED_KEY = "colocar-atracciones.decorados";
 var RIDE_CONSTRUCTION_CLASS = 13;
 var WIDTH = 220;
+// Screen direction of each arrow and the game's own diagonal arrow image for it, the one the footpath window uses.
+var ARROWS = [
+    { name: "moveNW", aim: [-1, -1], image: 5638 }, { name: "moveNE", aim: [1, -1], image: 5635 },
+    { name: "moveSW", aim: [-1, 1], image: 5637 }, { name: "moveSE", aim: [1, 1], image: 5636 }
+];
 
 var state = {
     phase: "idle",
@@ -645,6 +667,10 @@ function refresh() {
     setWidget("lower", { isDisabled: !marked || state.busy || limited(-1) });
     setWidget("raise", { isDisabled: !marked || state.busy || limited(1) });
     setWidget("rotate", { isDisabled: !marked || state.busy || (scenery && !canRotate(state.item)) });
+    var movable = (marked || (placingEntrance && state.entrance !== null)) && !state.busy;
+    ARROWS.forEach(function (arrow) {
+        setWidget(arrow.name, { isDisabled: !movable });
+    });
     setWidget("copy", { isDisabled: state.busy || ["idle", "pick", "marked"].indexOf(state.phase) < 0 });
     var ghost = isScenery() ? state.sceneryGhost : state.ghost;
     var canPlace = (marked && !state.error && ghost !== null) || (placingEntrance && state.entrance !== null);
@@ -1112,6 +1138,37 @@ function cancelCopy() {
     refresh();
 }
 
+// The map step that looks like the arrow on screen with the camera as it is turned now.
+function mapStep(aim) {
+    var rotation = ui.mainViewport ? ui.mainViewport.rotation : 0;
+    return [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(function (d) {
+        var v = viewOf(d[0], d[1], 0, rotation);
+        return Math.sign(v.x) === aim[0] && Math.sign(v.y) === aim[1];
+    })[0];
+}
+
+// Moves the mark like a tap next to it would; items on a quarter of a tile move half a tile, so they visit every corner.
+function moveMark(aim) {
+    if (state.busy) return;
+    var d = mapStep(aim);
+    if (state.phase === "marked" && isScenery()) {
+        var item = state.item, whole = isFullTile(item) || ignoresQuadrant(item), step = whole ? 32 : 16;
+        var corner = SCENERY_QUADRANT_POINTS[item.quadrant];
+        var p = { x: item.x * 32 + corner[0] + d[0] * step, y: item.y * 32 + corner[1] + d[1] * step };
+        markSceneryAt(Math.floor(p.x / 32), Math.floor(p.y / 32), whole ? item.quadrant : quadrantAt(p));
+    } else if (state.phase === "marked") {
+        markAt(state.mark.x + d[0], state.mark.y + d[1]);
+    } else if (state.entrance) {
+        var spot = entranceSpotOn(state.entrance.x + d[0], state.entrance.y + d[1], footprint(state.mark));
+        if (spot) {
+            markEntranceSpot(spot);
+        } else {
+            state.message = t("mustTouch");
+            refresh();
+        }
+    }
+}
+
 function changeHeight(delta) {
     if (state.phase !== "marked" || state.busy) return;
     if (isScenery() && !isHeightAllowed(state.ground, state.offset + delta)) return;
@@ -1196,6 +1253,10 @@ function markEntrance(mapCoords) {
         refresh();
         return;
     }
+    markEntranceSpot(spot);
+}
+
+function markEntranceSpot(spot) {
     state.message = "";
     state.busy = true;
     var isExit = state.phase === "exit", ride = state.mark.ride;
@@ -1261,14 +1322,14 @@ function openWindow() {
         refresh();
         return;
     }
-    var y = 18, half = (WIDTH - 16) / 2;
+    var y = 18, half = (WIDTH - 16) / 2, quarter = (WIDTH - 18) / 4;
     ui.openWindow({
         classification: WINDOW_CLASS,
         title: t("title"),
         x: ui.width - WIDTH - 10,
         y: 40,
         width: WIDTH,
-        height: y + 194,
+        height: y + 228,
         widgets: [
             { type: "label", name: "status", x: 6, y: y, width: WIDTH - 12, height: 12, text: "" },
             { type: "groupbox", x: 4, y: y + 16, width: WIDTH - 8, height: 44, text: t("height") },
@@ -1277,20 +1338,25 @@ function openWindow() {
             { type: "button", name: "raise", x: WIDTH - 62, y: y + 30, width: 50, height: 24, text: "+", onClick: safely(function () { changeHeight(1); }) },
             { type: "button", name: "rotate", x: 6, y: y + 66, width: half, height: 24, text: t("rotate"), onClick: safely(rotateMark) },
             { type: "button", name: "copy", x: WIDTH / 2 + 2, y: y + 66, width: half, height: 24, text: t("copy"), onClick: safely(startCopy) },
-            { type: "label", name: "cost", x: 8, y: y + 96, width: WIDTH - 16, height: 12, text: "" },
-            { type: "button", name: "place", x: 6, y: y + 112, width: half, height: 24, text: t("place"), onClick: safely(onPlace) },
-            { type: "button", name: "cancel", x: WIDTH / 2 + 2, y: y + 112, width: half, height: 24, text: t("cancel"), onClick: safely(onCancel) },
+            { type: "label", name: "cost", x: 8, y: y + 130, width: WIDTH - 16, height: 12, text: "" },
+            { type: "button", name: "place", x: 6, y: y + 146, width: half, height: 24, text: t("place"), onClick: safely(onPlace) },
+            { type: "button", name: "cancel", x: WIDTH / 2 + 2, y: y + 146, width: half, height: 24, text: t("cancel"), onClick: safely(onCancel) },
             {
-                type: "checkbox", name: "enabled", x: 6, y: y + 142, width: WIDTH - 12, height: 14,
+                type: "checkbox", name: "enabled", x: 6, y: y + 176, width: WIDTH - 12, height: 14,
                 text: t("confirm"), isChecked: enabled(),
                 onChange: function (checked) { context.sharedStorage.set(ENABLED_KEY, checked); }
             },
             {
-                type: "checkbox", name: "sceneryEnabled", x: 6, y: y + 160, width: WIDTH - 12, height: 14,
+                type: "checkbox", name: "sceneryEnabled", x: 6, y: y + 194, width: WIDTH - 12, height: 14,
                 text: t("confirmScenery"), isChecked: sceneryEnabled(),
                 onChange: function (checked) { context.sharedStorage.set(SCENERY_ENABLED_KEY, checked); }
             }
-        ],
+        ].concat(ARROWS.map(function (arrow, i) {
+            return {
+                type: "button", name: arrow.name, x: 6 + i * (quarter + 2), y: y + 96, width: quarter, height: 30,
+                image: arrow.image, tooltip: t("move"), onClick: safely(function () { moveMark(arrow.aim); })
+            };
+        })),
         onClose: safely(function () {
             reset();
         })
@@ -1299,7 +1365,7 @@ function openWindow() {
 }
 registerPlugin({
     name: "Colocar atracciones",
-    version: "1.2.0",
+    version: "1.3.0",
     authors: ["Ezequiel"],
     type: "local",
     licence: "MIT",

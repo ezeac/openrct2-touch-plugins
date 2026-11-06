@@ -7,6 +7,8 @@ var THREE_QUARTERS_FLAG = 1 << 25;
 var MIN_SCENERY_Z = 16;
 var MAX_SCENERY_Z = 1784;
 var SCENERY_WINDOW_CLASS = 18;
+// Centre of each quarter of a tile, in the order of quadrantAt.
+var SCENERY_QUADRANT_POINTS = [[8, 8], [8, 24], [24, 24], [24, 8]];
 var REFUND_ACTION = "colocaratracciones_refund";
 var SCENERY_ACTIONS = { smallsceneryplace: "small", largesceneryplace: "large" };
 var ELEMENT_TYPES = { small: "small_scenery", large: "large_scenery" };

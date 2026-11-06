@@ -112,6 +112,19 @@ function placeTrack(mark, z, flags, done) {
 var VIEW_UP = [[1, 1], [-1, 1], [-1, -1], [1, -1]];
 
 // The free spot next to the ride closest to the tap, after undoing the shift caused by the ride's height.
+// The spot on a given tile, if it is right next to the ride.
+function entranceSpotOn(x, y, rideTiles) {
+    var spot = null, taken = rideTiles.some(function (t) {
+        return t.x === x && t.y === y;
+    });
+    rideTiles.forEach(function (t) {
+        for (var d = 0; d < 4 && !taken && !spot; d++) {
+            if (t.x - DIRS[d][0] === x && t.y - DIRS[d][1] === y) spot = { x: x, y: y, direction: d };
+        }
+    });
+    return spot;
+}
+
 function entranceSpot(mapCoords, rideTiles, rideZ, rotation) {
     var tx = Math.floor(mapCoords.x / 32), ty = Math.floor(mapCoords.y / 32);
     var surface = surfaceOf(tx, ty);
